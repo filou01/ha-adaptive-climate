@@ -1,9 +1,8 @@
 name: Tests
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main, codex/pump-aware-pwm]
+    branches: [main]
   pull_request:
     branches: [main]
 
