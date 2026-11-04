@@ -370,6 +370,63 @@ async def test_i16_ordinary_pid_change_uses_phase_not_priority():
 
 
 @pytest.mark.asyncio
+async def test_new_eligible_setpoint_after_paid_pulse_still_starts_current_period():
+    sim = Simulation((720, 720))
+    await sim.update()
+    await sim.advance(1020)
+    zone = sim.zones[0]
+    assert not zone.on
+    zone.target += 1
+    await sim.update()
+    assert zone.transitions[-1] == (1020, True)
+    ledger = sim.manager._zones[zone.entity_id]
+    assert ledger.delivered == 720
+    assert ledger.credit == 720
+    assert ledger.requested == 1440
+
+
+@pytest.mark.asyncio
+async def test_priority_living_room_accepts_overlap_with_active_small_zone():
+    sim = Simulation()
+    await sim.update()
+    await sim.advance(1500)
+    assert not sim.zones[0].on and sim.zones[1].on
+    sim.zones[0].target += 1
+    await sim.update()
+    assert sim.zones[0].transitions[-1] == (1500, True)
+    assert sim.zones[1].on
+
+
+@pytest.mark.asyncio
+async def test_urgent_pulse_crosses_boundary_without_duplicate_start():
+    sim = Simulation((0, 720))
+    await sim.update()
+    await sim.advance(3500)
+    sim.zones[0].seconds = 720
+    sim.zones[0].target += 1
+    await sim.update()
+    await sim.advance(3620)
+    assert sim.zones[0].transitions == [(3500, True)]
+    ledger = sim.manager._zones[sim.zones[0].entity_id]
+    assert ledger.delivered == 100  # sampled at the boundary; 20s still running
+    sim.manager.observe(sim.zones[0].entity_id)
+    assert ledger.delivered == 120
+    assert ledger.requested == ledger.delivered + ledger.credit
+
+
+@pytest.mark.asyncio
+async def test_fallback_during_priority_does_not_cycle_other_active_output():
+    sim = Simulation((720, 720))
+    await sim.update()
+    sim.zones[1].target += 1
+    sim.zones[1].failure = True
+    assert not await sim.update(1)
+    assert sim.zones[0].transitions == [(0, True)]
+    assert all(zone.released for zone in sim.zones)
+    assert not sim.timers
+
+
+@pytest.mark.asyncio
 async def test_late_callback_charges_real_elapsed_and_no_busy_loop():
     sim = Simulation((720, 720))
     await sim.update()

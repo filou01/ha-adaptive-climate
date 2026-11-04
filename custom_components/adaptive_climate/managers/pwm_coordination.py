@@ -45,7 +45,7 @@ class HAZoneAdapter:
         )
 
     def available(self) -> bool:
-        return all(
+        return self.entity.entity_id == self.entity_id and all(
             (state := self.entity.hass.states.get(output)) is not None and state.state in ("on", "off")
             for output in self.outputs
         )
@@ -64,7 +64,9 @@ class HAZoneAdapter:
         return float(self.entity._control_output or 0.0)
 
     def signature(self) -> tuple[object, ...]:
-        return (self.entity._target_temp, self.entity.hvac_mode)
+        manager = getattr(self.entity, "_control_output_manager", None)
+        target = getattr(manager, "_last_effective_target", None)
+        return (self.entity._target_temp if target is None else target, self.entity.hvac_mode)
 
     def prepare(self, now: float) -> Pulse:
         entity = self.entity
@@ -213,6 +215,11 @@ class PWMCoordinationRegistry:
             group.invalidate(entity_id, urgent)
 
     async def apply(self, entity_id: str) -> bool:
+        for bound_id, candidate in self._adapters.items():
+            if candidate.entity.entity_id != bound_id:
+                affected = self._by_entity.get(bound_id)
+                if affected is not None and affected.mode != "fallback":
+                    affected.fail("entity ID changed; reload coordination configuration")
         group = self._by_entity.get(entity_id)
         adapter = self._adapters.get(entity_id)
         if group is not None and adapter is not None:

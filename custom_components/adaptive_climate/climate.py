@@ -1157,7 +1157,7 @@ class AdaptiveThermostat(
         """Set new target hvac mode."""
         old_mode = self._hvac_mode
         if isinstance(getattr(self, "_pwm_coordination", None), PWMCoordinationRegistry):
-            self._pwm_coordination.invalidate(self.entity_id, urgent=True)
+            self._pwm_coordination.invalidate(self.entity_id, urgent=old_mode != hvac_mode)
 
         # C01: Commit ALL mode mutations under lock BEFORE any I/O awaits to prevent the
         # control-loop re-entry race. Without the lock, a control-loop tick can fire during

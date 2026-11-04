@@ -43,10 +43,14 @@ class HeaterActuationController:
         for waiter in self._waiters:
             waiter.set()
 
-    async def _confirm(self, entity: str, electrical_on: bool) -> bool:
-        """Await binary HA state with timeout; this is not valve/flow feedback."""
+    def _listen(self, entity: str, callback):
+        """HA subscription boundary, kept injectable for deterministic tests."""
         from homeassistant.helpers.event import async_track_state_change_event
 
+        return async_track_state_change_event(self._heater._hass, [entity], callback)
+
+    async def _confirm(self, entity: str, electrical_on: bool) -> bool:
+        """Await binary HA state with timeout; this is not valve/flow feedback."""
         expected = "on" if electrical_on else "off"
 
         def matches() -> bool:
@@ -57,7 +61,7 @@ class HeaterActuationController:
             return True
         event = asyncio.Event()
         self._waiters.append(event)
-        cancel = async_track_state_change_event(self._heater._hass, [entity], lambda _: event.set())
+        cancel = self._listen(entity, lambda _: event.set())
         generation = self._generation
         try:
             async with asyncio.timeout(10):

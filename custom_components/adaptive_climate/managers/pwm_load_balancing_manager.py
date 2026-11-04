@@ -109,6 +109,9 @@ class PWMLoadBalancingManager:
         self._pump_on = False
         self._pump_sample = now()
         self._next_at: float | None = None
+        self._observed_group: set[str] = set()
+        self.weighted_overlap_seconds = 0.0
+        self.high_weight_overlap_seconds = 0.0
 
     def register(self, adapter: ZoneAdapter) -> None:
         """Bind after actual entity ID, restoration and controller readiness."""
@@ -174,6 +177,25 @@ class PWMLoadBalancingManager:
             zone.credit -= elapsed
             zone.delivered += elapsed
         zone.observed_on, zone.sampled_at = observed, now
+        self._metrics(now)
+
+    def _metrics(self, now: float) -> None:
+        elapsed = max(0.0, now - self._pump_sample)
+        active = self._observed_group
+        if active:
+            self.energized_seconds += elapsed
+        if len(active) > 1:
+            highest = min(self.members, key=lambda entity: (-self.members[entity], entity))
+            if highest in active:
+                self.high_weight_overlap_seconds += elapsed
+            ordered = sorted(active)
+            self.weighted_overlap_seconds += elapsed * sum(
+                self.members[a] * self.members[b] for n, a in enumerate(ordered) for b in ordered[n + 1 :]
+            )
+        current = {entity for entity, zone in self._zones.items() if zone.adapter.active()}
+        if current and not active:
+            self.estimated_starts += 1
+        self._observed_group, self._pump_sample = current, now
 
     def observe(self, entity_id: str) -> None:
         """Stamp observed edges synchronously, including during awaited commands."""
@@ -220,6 +242,12 @@ class PWMLoadBalancingManager:
                 zone.credit += pulse.seconds
             else:
                 zone.credit += pulse.seconds - zone.allocation
+                if changed and not zone.observed_on and pulse.seconds > 0 and zone.credit <= 0:
+                    # A fresh eligible target/mode transaction can authorize a
+                    # new legacy pulse even after the previous quantum was paid.
+                    # Keep all delivered history; do not replay an old slot.
+                    zone.credit += zone.allocation
+                    zone.requested += zone.allocation
             zone.requested += pulse.seconds if new_epoch else pulse.seconds - zone.allocation
             zone.allocation = pulse.seconds
             zone.pulse = pulse
@@ -330,12 +358,7 @@ class PWMLoadBalancingManager:
                     next_times.append(sampled + max(0.001, zone.credit))
                 elif result == ActuationResult.MINIMUM_TIME:
                     next_times.append(sampled + max(1.0, adapter.minimum_remaining(on, sampled)))
-        pump_on = any(z.adapter.active() for z in self._zones.values())
-        if self._pump_on:
-            self.energized_seconds += max(0.0, now - self._pump_sample)
-        if pump_on and not self._pump_on:
-            self.estimated_starts += 1
-        self._pump_on, self._pump_sample = pump_on, now
+        self._metrics(self._now())
         when = min(t for t in next_times if math.isfinite(t) and t > now)
         self._next_at = when
 
@@ -355,6 +378,9 @@ class PWMLoadBalancingManager:
             "generation": self._generation,
             "estimated_pump_starts": self.estimated_starts,
             "estimated_energized_seconds": round(self.energized_seconds, 1),
+            "estimated_weighted_overlap_seconds": round(self.weighted_overlap_seconds, 1),
+            "estimated_high_weight_overlap_seconds": round(self.high_weight_overlap_seconds, 1),
+            "projected_cyclic_starts": self.schedule.cyclic_starts if self.schedule else 0,
             "requested_seconds": round(zone.requested, 1) if zone else 0.0,
             "observed_on_seconds": round(zone.delivered, 1) if zone else 0.0,
             "cancelled_balance_seconds": round(zone.cancelled_balance, 1) if zone else 0.0,

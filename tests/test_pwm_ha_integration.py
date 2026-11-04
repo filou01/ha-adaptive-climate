@@ -184,3 +184,12 @@ def test_shared_output_disables_group(live):
     extra._heater_controller._heater_entity_id = ["switch.a"]
     live.registry.bind(extra)
     assert live.registry.groups[0].mode == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_entity_rename_revokes_old_group_owner(live):
+    entity = live.entities[0]
+    entity.entity_id = "climate.renamed"
+    assert not await live.registry.apply(entity.entity_id)
+    assert live.registry.groups[0].mode == "fallback"
+    assert not live.commands

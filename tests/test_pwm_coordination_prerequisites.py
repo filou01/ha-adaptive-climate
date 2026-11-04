@@ -173,13 +173,11 @@ async def test_failed_stop_does_not_commit_learning_end(actuator):
 
 @pytest.mark.asyncio
 async def test_command_acceptance_waits_for_observed_state(actuator, monkeypatch):
-    from homeassistant.helpers import event
-
     listeners = []
     monkeypatch.setattr(
-        event,
-        "async_track_state_change_event",
-        lambda hass, entities, callback: listeners.append(callback) or (lambda: None),
+        actuator.controller._actuation,
+        "_listen",
+        lambda entity, callback: listeners.append(callback) or (lambda: None),
     )
 
     async def accepted_without_feedback(*args, **kwargs):
