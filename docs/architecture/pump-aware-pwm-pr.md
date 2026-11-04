@@ -39,24 +39,33 @@ it. Both heater paths are covered. Repeated maintenance output above the 2%
 threshold remains outside these narrow fixes. See [hotfix scope and exact-source
 validation](../learning-hotfixes.md).
 
+Parallel zone setup now serializes shared learning-store initialization and
+restoration before publication, preventing duplicate learning-window number
+registration and multiple initial store instances. Six deterministic startup
+regressions cover concurrent load/restoration, errors and cancellation.
+See [the startup fix report](../learning-startup-fix.md) for exact-source CI links.
+
 ## Validation
 
-- Linux Python 3.11.18: **3549 passed, 11 skipped**, full suite, exit 0.
-- Linux Python 3.12.3: **3549 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.11.18: **3555 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3555 passed, 11 skipped**, full suite, exit 0.
+- New shared-startup regressions: **6 passed** in each full suite.
 - New learning hotfix regressions: **29 passed** in each full suite.
 - Targeted PWM regressions: **74 passed**, no xfails.
 - Ruff check/format and Pyright: **PASS**.
 - HACS action and hassfest: **PASS** on the final source commit; links in report.
-- GitHub Linux 3.11/3.12 matrix: both jobs **PASS**, including full tests, lint,
-  format and types; exact-source links in report.
+- GitHub Linux 3.11/3.12 matrix: all test/lint/format/type steps **PASS**;
+  overall workflow finalization incomplete during release preparation.
+  Exact-source status and independent successful Linux runs are in the startup report.
 - Eight 24h runtime-vs-real-legacy-PWM replays: **PASS** for the measured model.
   At fixed 80% demand, starts fall from 96 to 24 and all four zones receive
   exactly 17280 electrical seconds, with zero debt. At fixed 140%, minimal
   preserves a continuously energized cyclic group; maximal reduces runtime
   but increases starts. Both interactive event latencies are zero simulated
   seconds. Model/finite-window qualifications are explicit in the report.
-- Windows full suite: **3538 passed, 11 pre-existing report-format failures,
-  11 skipped** (`%b %-d`); Linux passes those report tests.
+- Windows startup/setup/manifold/water-persistence regressions: **44 passed**.
+  Full Windows suite for preview 3: **NOT RUN**. Preview 2 had 3538 passed,
+  11 skipped and 11 pre-existing report-format failures (`%b %-d`).
 
 **NOT RUN:** real HA automation/preset-to-device end-to-end trial, physical
 relays/pump/flow, supervised 24h hydronic run with real minimum times, Raspberry

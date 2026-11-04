@@ -26,6 +26,7 @@
 > by default. See [configuration and rollback](docs/pump-aware-pwm.md) and the
 > [verification report](docs/architecture/pump-aware-pwm-verification.md).
 > Preview 2 also includes [the learning-cycle and PID diagnostics hotfixes](docs/learning-hotfixes.md).
+> Preview 3 fixes [parallel startup of the shared learning store and learning-window entity](docs/learning-startup-fix.md).
 > The fork's `main` remains the upstream baseline; preview releases identify
 > the development commit and remaining validation requirements.
 

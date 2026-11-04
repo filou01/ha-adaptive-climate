@@ -1,5 +1,7 @@
 # Learning hotfixes in fork preview 2
 
+> Preview 3 includes these fixes plus the [shared learning startup fix](learning-startup-fix.md).
+
 Release `v0.67.1-pwm.2` integrates the reviewed changes from
 `apply_ac_067_cycle_fix.py` and `adaptive_climate_hotfix_0.67.0_v3.py` into the
 current controller architecture. Their deployment/backup/restart entry points
