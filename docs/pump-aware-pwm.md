@@ -119,7 +119,8 @@ estimate, not proof of valve position or physical heat.
 | Startup ON with unknown elapsed time | Conservative fallback; start the monitored trial with group outputs OFF. |
 
 Fallback is latched for the group until restart. Do not repeatedly toggle
-settings to hide a recurrent fault; inspect the exposed reason. The coordinator adds no persistent storage or PID gain reset. Preview 2 adds
+settings to hide a recurrent fault; inspect the exposed reason. Preview 6 adds durable PWM restart journals to the existing HA Store; see
+[restart recovery and its limits](pwm-restart-safety.md). No PID gain reset is introduced. Preview 2 adds
 an independent learner payload v12 migration; see [learning hotfixes](learning-hotfixes.md).
 No obsolete `loops` key or pump-flow-control dependency is introduced. Unconfigured zones are not scheduled.
 
@@ -142,7 +143,8 @@ no physical relay feedback is inferred by accepting its entity domain.
 
 After upgrading, restart HA because the previous unsupported-output fallback is
 latched. Begin the monitored restart with participating thermostats and helpers
-OFF, as described below; startup ON with unknown elapsed time still falls back.
+OFF, as described below. Preview 6 restores known journaled ON state; startup
+ON without a trustworthy journal still falls back.
 See [preview 4 verification](input-boolean-pwm.md) for the actual checks run.
 
 ## Installing the preview from the fork
@@ -169,6 +171,11 @@ This page is not a declaration that a particular release has passed tests;
 use its verification report. No automatic change is made to your HA instance.
 
 ## Diagnostics and rollback
+
+Preview 6 preserves zone time budgets and last known output edges across
+restarts. See [restart journals, new diagnostics and limitations](pwm-restart-safety.md).
+The first upgrade has no previous journal; independent fallback retains legacy
+restart behavior.
 
 Use preview 5 or later for the PWM timer/output callback thread-safety fix. See
 [the callback fix and dt-warning assessment](pwm-callback-safety.md) for exact

@@ -57,25 +57,41 @@ access to task creation and scheduler/actuator state. Six new modeled-dispatch
 regressions cover both binary domains. The separate dt discrepancy diagnostic
 and PID timing remain unchanged; see [the callback fix report](../pwm-callback-safety.md).
 
+Preview 6 adds a versioned per-group PWM journal in the existing HA Store.
+It restores period budgets, known delivered time, last known output edges,
+low-duty credit and waiting priority/deadline state. Write-ahead ON intents and
+post-confirmation checkpoints prevent duplicate ordinary pulses after restart.
+Unknown offline delivery is withdrawn into a separate uncertain balance rather
+than claimed as measured heat. Failed persistence blocks ON and requests safety
+OFF through HeaterController. Partial entity startup retains unbound rows.
+See [architecture, changed files, evidence and limitations](../pwm-restart-safety.md).
+The initial upgrade has no past journal; independent fallback retains legacy
+restart behavior. There is no optimizer dependency or learning reset.
+
 ## Validation
 
-- Linux Python 3.11.18: **3578 passed, 11 skipped**, full suite, exit 0.
-- Linux Python 3.12.3: **3578 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.11.18: **3628 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3628 passed, 11 skipped**, full suite, exit 0.
+- New PWM restart/storage regressions and simulations: **50 passed**.
 - New shared-startup regressions: **6 passed** in each full suite.
 - New learning hotfix regressions: **29 passed** in each full suite.
-- Targeted PWM regressions: **97 passed**, no xfails.
+- Targeted PWM regressions: **147 passed**, no xfails.
 - Ruff check/format and Pyright: **PASS**.
-- HACS and hassfest: **PASS** for the preview 5 source commit.
+- HACS and hassfest: **PASS** for the preview 6 source commit.
 - GitHub Linux 3.11/3.12 matrix: **PASS**, including full tests, lint, format
-  and types. Exact-source links and local results are in the callback fix report.
+  and types. Exact-source links and local results are in the restart report.
+- Four additional 24h persistence replays: switch/input_boolean, with zero or
+  143 unclean restarts. All preserve 36000 ON seconds per zone, 24 starts and
+  66240 group ON seconds, with zero ending debt. Unconfirmed budget is reported
+  separately from known observed delivery. Physical behavior is not measured.
 - Eight 24h runtime-vs-real-legacy-PWM replays: **PASS** for the measured model.
   At fixed 80% demand, starts fall from 96 to 24 and all four zones receive
   exactly 17280 electrical seconds, with zero debt. At fixed 140%, minimal
   preserves a continuously energized cyclic group; maximal reduces runtime
   but increases starts. Both interactive event latencies are zero simulated
   seconds. Model/finite-window qualifications are explicit in the report.
-- Windows callback/controller-safety and HA boundary tests: **44 passed**.
-  Full Windows suite for preview 5: **NOT RUN**. Preview 2 had 3538 passed,
+- Windows real-controller restart/storage regressions: **50 passed**.
+  Full Windows suite for preview 6: **NOT RUN**. Preview 2 had 3538 passed,
   11 skipped and 11 pre-existing report-format failures (`%b %-d`).
 
 **NOT RUN:** real HA automation/preset-to-device end-to-end trial, physical
@@ -89,7 +105,9 @@ Publish only a clearly marked preview in the personal fork. Keep the feature
 disabled initially, preserve learning storage, verify ordinary behavior and
 then perform a supervised trial with correct entity IDs and outputs OFF at
 startup. Remove the coordination block or set `enabled: false` and restart to
-return to independent PWM. Reinstall the recorded upstream version if needed;
+return to independent PWM, which retains legacy restart timing. The first
+preview-6 upgrade has no earlier journal; start with outputs OFF and let minimum
+OFF elapse before resuming HEAT. Reinstall the recorded upstream version if needed;
 do not reset adaptive learning.
 
 No PR is automatically opened upstream. Before an upstream PR, retain reusable
