@@ -134,6 +134,27 @@ async def test_recent_off_keeps_minimum_off_across_restart_and_priority_request(
 
 
 @pytest.mark.asyncio
+async def test_priority_blocked_before_restart_starts_at_first_eligible_time_after_restart(journal):
+    live = journal.live
+    await journal.complete_first()
+    journal.advance(1500)
+    await live.entities[1].apply()
+    assert live.state[f"{live.domain}.b"] == "off"
+    live.entities[1]._set_target_temp(23)
+    await live.entities[1].apply()
+    assert journal.ledger(1).priority
+    assert journal.ledger(1).priority_blocked_reason == "minimum_off"
+    await journal.reboot(offline=100)
+    journal.advance(499)
+    await live.entities[1].apply()
+    assert live.state[f"{live.domain}.b"] == "off"
+    journal.advance(1)
+    await live.entities[1].apply()
+    assert live.state[f"{live.domain}.b"] == "on"
+    assert journal.ledger(1).priority_latency_ms == 600000
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("transition", ["target", "off_heat"])
 async def test_real_priority_change_after_restart_is_not_deferred_to_next_period(journal, transition):
     live = journal.live

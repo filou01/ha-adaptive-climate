@@ -92,6 +92,15 @@ def snapshot(group: PWMLoadBalancingManager, now: float, wall: float) -> dict[st
         group._sample(zone, now)
         rows[entity] = {
             "at": wall,
+            "priority": zone.priority,
+            "priority_at": wall + zone.priority_at - now if zone.priority_at is not None else None,
+            "pending_priority": zone.pending_priority,
+            "owed_at": wall + zone.owed_since - now if zone.owed_since is not None else None,
+            "priority_count": zone.priority_start_count,
+            "priority_latency": zone.priority_latency_ms,
+            "blocked_count": zone.priority_blocked_count,
+            "blocked_reason": zone.priority_blocked_reason,
+            "max_deferral": zone.max_deferral,
             "controller": zone.adapter.checkpoint_state(now, wall),
             "credit": zone.credit,
             "allocation": zone.allocation,
@@ -147,6 +156,17 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
             number(row["signature"][0])
         if row["next_at"] is not None:
             number(row["next_at"])
+        for key in ("priority", "pending_priority"):
+            if not isinstance(row.get(key, False), bool):
+                raise ValueError("Invalid PWM priority flag")
+        for key in ("priority_at", "owed_at"):
+            if row.get(key) is not None and number(row[key]) > wall + 5:
+                raise ValueError("Invalid PWM priority timestamp")
+        for key in ("priority_count", "blocked_count", "max_deferral"):
+            if number(row.get(key, 0)) < 0:
+                raise ValueError("Invalid PWM priority counter")
+        if row.get("priority_latency") is not None:
+            number(row["priority_latency"])
     group._origin = now - max(0.0, wall - origin)
     for entity, zone in group._zones.items():
         if entity in group.restored_members:
@@ -162,6 +182,15 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
         zone.uncertain_seconds = number(row["uncertain"])
         zone.epoch, zone.output_value = int(row["epoch"]), number(row["output"])
         zone.target_signature = tuple(row["signature"])
+        zone.priority = row.get("priority", False)
+        zone.pending_priority = row.get("pending_priority", False)
+        zone.priority_at = now - (wall - row["priority_at"]) if row.get("priority_at") is not None else None
+        zone.owed_since = now - (wall - row["owed_at"]) if row.get("owed_at") is not None else None
+        zone.priority_start_count = int(row.get("priority_count", 0))
+        zone.priority_latency_ms = row.get("priority_latency")
+        zone.priority_blocked_count = int(row.get("blocked_count", 0))
+        zone.priority_blocked_reason = row.get("blocked_reason")
+        zone.max_deferral = number(row.get("max_deferral", 0))
         zone.pulse = Pulse(*row["pulse"])
         next_at = row["next_at"]
         zone.next_budget_at = now + number(next_at) - wall if next_at is not None else None
