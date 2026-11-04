@@ -1,5 +1,8 @@
 # Configurable PWM overlap policy
 
+Historical design decision. The later implemented preview and its supported
+configuration are documented in [the user guide](../pump-aware-pwm.md).
+
 Accepted requirement, 2026-11-04. **Design only: no configuration or runtime
 scheduler is implemented yet.** See the
 [safety review](pump-aware-pwm-safety-review.md) for the unresolved activation

@@ -1,0 +1,68 @@
+# feat: optional pump-aware HEAT PWM coordination
+
+Independent zone PWM can start a shared electrically OR-controlled pump many
+times per day. This change adds disabled-by-default group scheduling with
+minimal overlap (spread pulses, favor high-weight solo time) or maximal overlap
+(concentrate pulses, potentially trading more pump starts for less runtime).
+
+**An eligible setpoint increase or OFF->HEAT transition is evaluated immediately
+and is never delayed to the next coordinated PWM slot; subsequent pulses are
+optimized.** Existing safety, genuine demand, minimum switching times and duty
+accumulation remain authoritative. Old reservations are revoked and observed
+electrical seconds pay the delivery ledger once.
+
+The pure bounded planner issues no HA calls. A domain registry binds live
+post-restoration entities to protocol-based group managers. Each group owns one
+cancellable next-event timer; controller commands, mode/pause cancellation and
+fallback use version checks and a serialized result-bearing heater helper.
+Failed/rejected commands do not consume raw credit or emit successful learning
+events. Valve/pipeline timestamps follow observed electrical transitions.
+
+The initial preview supports same-period HEAT-only PWM with one non-inverted
+binary switch per zone. Unsupported modes/outputs, shared relays, unavailability,
+unknown startup ON elapsed time and runtime failure disengage the group with
+diagnostics. Unconfigured/disabled installations keep their independent path;
+there is no optimizer dependency, pump relay control or storage migration.
+
+Configuration, topology assumptions, diagnostics and rollback are in
+[the user guide](../pump-aware-pwm.md). Full architecture, changed-file list,
+I01–I19 coverage mapping and measured simulation results are in
+[the verification report](pump-aware-pwm-verification.md).
+
+## Validation
+
+- Linux Python 3.11.18: **3519 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3519 passed, 11 skipped**, full suite, exit 0.
+- Targeted PWM regressions: **73 passed**, no xfails.
+- Ruff check/format and Pyright: **PASS**.
+- HACS action and hassfest: **PASS** on the final source commit; links in report.
+- GitHub Linux 3.11/3.12 matrix: both jobs **PASS**, including full tests, lint,
+  format and types; exact-source links in report.
+- Eight 24h runtime-vs-real-legacy-PWM replays: **PASS** for the measured model.
+  At fixed 80% demand, starts fall from 96 to 24 and all four zones receive
+  exactly 17280 electrical seconds, with zero debt. At fixed 140%, minimal
+  preserves a continuously energized cyclic group; maximal reduces runtime
+  but increases starts. Both interactive event latencies are zero simulated
+  seconds. Model/finite-window qualifications are explicit in the report.
+- Windows full suite: **3508 passed, 11 pre-existing report-format failures,
+  11 skipped** (`%b %-d`); Linux passes those report tests.
+
+**NOT RUN:** real HA automation/preset-to-device end-to-end trial, physical
+relays/pump/flow, supervised 24h hydronic run with real minimum times, Raspberry
+Pi CPU measurement, variable maintenance-duty 24h replay with real actuator
+timing, and wiki publication. Stub/protocol tests do not replace these trials.
+
+## Rollout and rollback
+
+Publish only a clearly marked preview in the personal fork. Keep the feature
+disabled initially, preserve learning storage, verify ordinary behavior and
+then perform a supervised trial with correct entity IDs and outputs OFF at
+startup. Remove the coordination block or set `enabled: false` and restart to
+return to independent PWM. Reinstall the recorded upstream version if needed;
+do not reset adaptive learning.
+
+No PR is automatically opened upstream. Before an upstream PR, retain reusable
+code/tests/docs and adjust fork-specific installation, badge and engineering
+history references for the upstream repository. The source version remains
+semantic-release managed at its upstream baseline; the fork preview is
+identified by its Git tag and exact commit.

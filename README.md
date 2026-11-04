@@ -1,5 +1,5 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-[![Tests](https://github.com/afewyards/ha-adaptive-climate/workflows/Tests/badge.svg)](https://github.com/afewyards/ha-adaptive-climate/actions/workflows/tests.yml)
+[![PWM validation](https://github.com/filou01/ha-adaptive-climate/actions/workflows/pwm-validation.yml/badge.svg?branch=codex%2Fpump-aware-pwm)](https://github.com/filou01/ha-adaptive-climate/actions/workflows/pwm-validation.yml)
 
 <a href="https://www.buymeacoffee.com/afewyards" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
@@ -21,10 +21,12 @@
 # Adaptive Climate
 
 > **Pump-aware PWM development in this fork:** the `codex/pump-aware-pwm`
-> branch currently contains safety prerequisite tests and engineering documents,
-> not an installable PWM scheduling feature. The proposed `pwm_coordination`
-> configuration is unsupported. See the [safety review](docs/architecture/pump-aware-pwm-safety-review.md)
-> and the planned [minimal/maximal overlap policy](docs/architecture/pump-aware-pwm-overlap-policy.md).
+> branch implements an opt-in heating PWM preview with configurable minimal or
+> maximal overlap and immediate eligible target/mode response. It is disabled
+> by default. See [configuration and rollback](docs/pump-aware-pwm.md) and the
+> [verification report](docs/architecture/pump-aware-pwm-verification.md).
+> The fork's `main` remains the upstream baseline; preview releases identify
+> the development commit and remaining validation requirements.
 
 ## Smart PID Climate Control with Adaptive Learning for Home Assistant
 

@@ -1,5 +1,9 @@
 # Pump-aware PWM: safety review and implementation blocker
 
+Historical review of the initial prerequisite-only commit. The later
+implementation and current evidence are documented in the
+[verification report](pump-aware-pwm-verification.md).
+
 Reviewed on 2026-11-04 against upstream main
 `48add428ccc9d356be186f69049526a7d91116c9` (0.67.0), on branch
 `codex/pump-aware-pwm`.
