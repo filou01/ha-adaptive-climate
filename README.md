@@ -19,6 +19,13 @@
 ```
 
 # Adaptive Climate
+
+> **Pump-aware PWM development in this fork:** the `codex/pump-aware-pwm`
+> branch currently contains safety prerequisite tests and engineering documents,
+> not an installable PWM scheduling feature. The proposed `pwm_coordination`
+> configuration is unsupported. See the [safety review](docs/architecture/pump-aware-pwm-safety-review.md)
+> and the planned [minimal/maximal overlap policy](docs/architecture/pump-aware-pwm-overlap-policy.md).
+
 ## Smart PID Climate Control with Adaptive Learning for Home Assistant
 
 An advanced climate integration featuring PID control with automatic tuning, adaptive learning, multi-zone coordination, and energy optimization. Fork of [HASmartThermostat](https://github.com/ScratMan/HASmartThermostat) with extensive enhancements.

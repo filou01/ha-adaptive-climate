@@ -50,6 +50,14 @@ claims that each changed since the author's review:
 
 No optimizer dependency or runtime module was added.
 
+Follow-up on 2026-11-04: the operator requested a personal GitHub fork and a
+per-group minimal/maximal overlap choice, using minimal overlap for their own
+installation even when pump energized runtime increases. The accepted policy
+is documented in [the overlap policy](pump-aware-pwm-overlap-policy.md).
+The personal fork now exists at
+[filou01/ha-adaptive-climate](https://github.com/filou01/ha-adaptive-climate).
+These updates do not resolve the safety gates or add runtime configuration.
+
 ## Reproduced safety and accounting gaps
 
 Use the real `HeaterController`, `PWMController`, service caller, pipeline and
