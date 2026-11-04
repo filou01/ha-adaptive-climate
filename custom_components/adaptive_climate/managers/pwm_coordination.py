@@ -34,6 +34,9 @@ class HAZoneAdapter:
         self.blocked = False
         self.restart_force_off = False
 
+    def continuous_demand(self) -> bool:
+        return self.output() >= self.entity._heater_controller._difference
+
     def ready(self) -> bool:
         entity = self.entity
         return entity.hvac_mode == HVACMode.OFF or bool(
@@ -341,14 +344,18 @@ class PWMCoordinationRegistry:
             adapter.blocked = False
         if group is None:
             return False
-        if group.reason in ("restart_state_invalid", "restart_storage_error"):
+        if group.reason in ("restart_state_invalid", "restart_storage_error", "restart_reconciliation_failed"):
             # Do not bypass a failed durable reservation through the legacy path.
             await self._stop_failed_group(group)
             return True
         result = await group.update(entity_id)
         # A failed invocation is still consumed here. release() schedules the
         # next legacy transaction; never retry ON through two paths in one call.
-        return result or owned_at_entry or group.reason in ("restart_state_invalid", "restart_storage_error")
+        return (
+            result
+            or owned_at_entry
+            or group.reason in ("restart_state_invalid", "restart_storage_error", "restart_reconciliation_failed")
+        )
 
     def owns(self, entity_id: str) -> bool:
         group = self._by_entity.get(entity_id)

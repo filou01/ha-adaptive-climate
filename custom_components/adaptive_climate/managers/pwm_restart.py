@@ -29,6 +29,7 @@ def controller_state(adapter: HAZoneAdapter, now: float, wall: float) -> dict[st
     return {
         "outputs": list(adapter.outputs),
         "on": adapter.active(),
+        "reconcile_off": adapter.restart_force_off,
         "switch_at": wall + at - now if entity._last_heat_cycle_time is not None else wall,
         "accumulator": heater.duty_accumulator_seconds,
         "accumulator_at": (
@@ -64,7 +65,10 @@ def restore_controller(adapter: HAZoneAdapter, row: dict[str, Any], now: float, 
     pending = row["pending_on"]
     if not isinstance(pending, bool):
         raise ValueError("Invalid PWM pending command")
-    matches = state["on"] == adapter.active() and not pending
+    reconcile = state.get("reconcile_off", False)
+    if not isinstance(reconcile, bool):
+        raise ValueError("Invalid PWM reconciliation state")
+    matches = state["on"] == adapter.active() and not pending and not reconcile
     entity = adapter.entity
     # A mismatching state has no trustworthy last edge. Start its minimum guard
     # now; an uncertain in-flight ON is reconciled OFF through HeaterController.

@@ -195,6 +195,23 @@ async def test_crash_between_on_intent_and_confirmation_reconciles_off_without_r
 
 
 @pytest.mark.asyncio
+async def test_old_uncertain_on_is_reconciled_before_allocating_a_new_period(journal):
+    live = journal.live
+    await live.entities[0].apply()
+    saved = journal.disk.data["pwm_coordination"]["pump"]["zones"]["climate.a"]
+    saved["pending_on"] = True
+    saved["controller"]["on"] = False
+    await journal.reboot(offline=86400)
+    await live.entities[0].apply()
+    assert live.state[f"{live.domain}.a"] == "off"
+    assert journal.ledger().requested == 3000
+    assert journal.ledger().credit == 1500
+    journal.advance(600)
+    await live.entities[0].apply()
+    assert live.state[f"{live.domain}.a"] == "on"
+
+
+@pytest.mark.asyncio
 async def test_storage_failure_blocks_unjournaled_on_and_legacy_bypass(journal):
     live = journal.live
     journal.disk.fail = True

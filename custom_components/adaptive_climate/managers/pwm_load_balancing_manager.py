@@ -27,6 +27,9 @@ class ZoneAdapter(Protocol):
     entity_id: str
     period: float
     outputs: tuple[str, ...]
+    restart_force_off: bool
+
+    def continuous_demand(self) -> bool: ...
 
     def ready(self) -> bool: ...
     def checkpoint_state(self, now: float, wall: float) -> dict[str, Any]: ...
@@ -145,7 +148,7 @@ class PWMLoadBalancingManager:
                 self.fail("mixed/nonpositive PWM periods or duplicate heater outputs")
                 return
             self._period = periods.pop()
-            if self._origin is not None:
+            if self._origin is not None and self.restored_members:
                 return  # A journal already restored earlier members; never reset them.
             self._origin = self._now()
             for zone in self._zones.values():
@@ -329,6 +332,22 @@ class PWMLoadBalancingManager:
             return
         for zone in self._zones.values():
             self._sample(zone, now)
+            if zone.restart_pending and zone.adapter.restart_force_off:
+                if zone.adapter.eligible() and zone.adapter.continuous_demand():
+                    zone.adapter.restart_force_off = False
+                else:
+                    generation, version = self._generation, zone.version
+                    await self.save_checkpoint()
+                    if generation != self._generation or version != zone.version:
+                        return
+                    result = await zone.adapter.command(False)
+                    self._sample(zone, self._now())
+                    await self.save_checkpoint()
+                    if generation != self._generation or version != zone.version:
+                        return
+                    if result not in (ActuationResult.CHANGED, ActuationResult.UNCHANGED):
+                        self.fail("restart_reconciliation_failed", release=False)
+                        return
             self._allocate(zone, now)
         requests = [
             ZoneRequest(entity, min(self._period, max(0.0, zone.allocation)), zone.weight)
