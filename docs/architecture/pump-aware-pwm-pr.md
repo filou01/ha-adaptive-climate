@@ -51,25 +51,31 @@ through the same controller service and confirmation path. Both domains and
 mixed groups are tested; unsupported analog output domains remain rejected.
 See [the current compatibility and verification report](../input-boolean-pwm.md).
 
+Preview 5 marks the HA timer, output listener and actuator-confirmation
+callbacks for nonblocking event-loop dispatch, correcting executor-thread
+access to task creation and scheduler/actuator state. Six new modeled-dispatch
+regressions cover both binary domains. The separate dt discrepancy diagnostic
+and PID timing remain unchanged; see [the callback fix report](../pwm-callback-safety.md).
+
 ## Validation
 
-- Linux Python 3.11.18: **3572 passed, 11 skipped**, full suite, exit 0.
-- Linux Python 3.12.3: **3572 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.11.18: **3578 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3578 passed, 11 skipped**, full suite, exit 0.
 - New shared-startup regressions: **6 passed** in each full suite.
 - New learning hotfix regressions: **29 passed** in each full suite.
-- Targeted PWM regressions: **91 passed**, no xfails.
+- Targeted PWM regressions: **97 passed**, no xfails.
 - Ruff check/format and Pyright: **PASS**.
-- GitHub matrix, HACS and hassfest for the preview 4 source commit: **QUEUED**
-  at release preparation; not counted as executed or passed. Links and successful
-  independent Linux test results are in the current input_boolean report.
+- HACS and hassfest: **PASS** for the preview 5 source commit.
+- GitHub Linux 3.11/3.12 matrix: **PASS**, including full tests, lint, format
+  and types. Exact-source links and local results are in the callback fix report.
 - Eight 24h runtime-vs-real-legacy-PWM replays: **PASS** for the measured model.
   At fixed 80% demand, starts fall from 96 to 24 and all four zones receive
   exactly 17280 electrical seconds, with zero debt. At fixed 140%, minimal
   preserves a continuously energized cyclic group; maximal reduces runtime
   but increases starts. Both interactive event latencies are zero simulated
   seconds. Model/finite-window qualifications are explicit in the report.
-- Windows real-controller HA boundary tests: **28 passed** for preview 4.
-  Full Windows suite for preview 4: **NOT RUN**. Preview 2 had 3538 passed,
+- Windows callback/controller-safety and HA boundary tests: **44 passed**.
+  Full Windows suite for preview 5: **NOT RUN**. Preview 2 had 3538 passed,
   11 skipped and 11 pre-existing report-format failures (`%b %-d`).
 
 **NOT RUN:** real HA automation/preset-to-device end-to-end trial, physical

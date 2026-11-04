@@ -170,6 +170,11 @@ use its verification report. No automatic change is made to your HA instance.
 
 ## Diagnostics and rollback
 
+Use preview 5 or later for the PWM timer/output callback thread-safety fix. See
+[the callback fix and dt-warning assessment](pwm-callback-safety.md) for exact
+validation and remaining live-test gaps.
+
+
 Each participating climate entity exposes a bounded `pwm_coordination`
 attribute: group mode/reason, strategy, generation, estimated pump starts and
 energized time, projected/observed overlap, requested/observed/cancelled time,

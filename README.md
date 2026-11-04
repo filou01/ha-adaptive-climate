@@ -28,6 +28,7 @@
 > Preview 2 also includes [the learning-cycle and PID diagnostics hotfixes](docs/learning-hotfixes.md).
 > Preview 3 fixes [parallel startup of the shared learning store and learning-window entity](docs/learning-startup-fix.md).
 > Preview 4 supports [input_boolean relay proxies such as NSPanel/ESPHome](docs/input-boolean-pwm.md).
+> Preview 5 fixes [PWM callbacks dispatched outside the HA event loop](docs/pwm-callback-safety.md).
 > The fork's `main` remains the upstream baseline; preview releases identify
 > the development commit and remaining validation requirements.
 
