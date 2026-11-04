@@ -25,6 +25,7 @@
 > maximal overlap and immediate eligible target/mode response. It is disabled
 > by default. See [configuration and rollback](docs/pump-aware-pwm.md) and the
 > [verification report](docs/architecture/pump-aware-pwm-verification.md).
+> Preview 2 also includes [the learning-cycle and PID diagnostics hotfixes](docs/learning-hotfixes.md).
 > The fork's `main` remains the upstream baseline; preview releases identify
 > the development commit and remaining validation requirements.
 

@@ -1,3 +1,6 @@
+> Historical report for `v0.67.1-pwm.1`. For preview 2 hotfix scope and current
+> full-suite/CI results, see [the hotfix report](../learning-hotfixes.md).
+
 # Pump-aware PWM verification
 
 Implementation baseline: upstream `48add428ccc9d356be186f69049526a7d91116c9`

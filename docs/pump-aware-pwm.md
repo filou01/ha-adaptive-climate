@@ -117,9 +117,9 @@ estimate, not proof of valve position or physical heat.
 | Startup ON with unknown elapsed time | Conservative fallback; start the monitored trial with group outputs OFF. |
 
 Fallback is latched for the group until restart. Do not repeatedly toggle
-settings to hide a recurrent fault; inspect the exposed reason. No learning
-storage migration, PID gain reset, obsolete `loops` key or pump-flow-control
-dependency is introduced. Unconfigured zones are not scheduled.
+settings to hide a recurrent fault; inspect the exposed reason. The coordinator adds no persistent storage or PID gain reset. Preview 2 adds
+an independent learner payload v12 migration; see [learning hotfixes](learning-hotfixes.md).
+No obsolete `loops` key or pump-flow-control dependency is introduced. Unconfigured zones are not scheduled.
 
 ## Installing the preview from the fork
 
@@ -156,4 +156,6 @@ it is not time until water reaches the room. No real pump-state sensor is read.
 To return to independent PWM, set `enabled: false` or remove the block and
 restart Home Assistant. If necessary, reinstall the recorded known-good
 upstream release and restore its configuration. Preserve adaptive learning
-storage; no reset or migration is required.
+storage and its pre-upgrade backup; no manual reset is required. See
+[the hotfix rollback notes](learning-hotfixes.md#installation-and-rollback) for
+the additive learner counter migration.

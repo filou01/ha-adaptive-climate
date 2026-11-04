@@ -22,17 +22,28 @@ The initial preview supports same-period HEAT-only PWM with one non-inverted
 binary switch per zone. Unsupported modes/outputs, shared relays, unavailability,
 unknown startup ON elapsed time and runtime failure disengage the group with
 diagnostics. Unconfigured/disabled installations keep their independent path;
-there is no optimizer dependency, pump relay control or storage migration.
+there is no optimizer dependency or pump relay control. The general learning
+hotfixes additionally migrate learner payload v11 to v12 to persist its cooldown
+cycle counter without discarding completed cycles or confidence.
 
 Configuration, topology assumptions, diagnostics and rollback are in
 [the user guide](../pump-aware-pwm.md). Full architecture, changed-file list,
 I01–I19 coverage mapping and measured simulation results are in
 [the verification report](pump-aware-pwm-verification.md).
 
+The change also integrates the supplied fixes for upstream issues #6 and #7:
+transient learning sessions restart consistently, zero/tiny PWM demand shares
+one settling deadline, and PID recommendation diagnostics use actual gains.
+Recommendation previews preserve cooldown credit; successful application commits
+it. Both heater paths are covered. Repeated maintenance output above the 2%
+threshold remains outside these narrow fixes. See [hotfix scope and exact-source
+validation](../learning-hotfixes.md).
+
 ## Validation
 
-- Linux Python 3.11.18: **3520 passed, 11 skipped**, full suite, exit 0.
-- Linux Python 3.12.3: **3520 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.11.18: **3549 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3549 passed, 11 skipped**, full suite, exit 0.
+- New learning hotfix regressions: **29 passed** in each full suite.
 - Targeted PWM regressions: **74 passed**, no xfails.
 - Ruff check/format and Pyright: **PASS**.
 - HACS action and hassfest: **PASS** on the final source commit; links in report.
@@ -44,7 +55,7 @@ I01–I19 coverage mapping and measured simulation results are in
   preserves a continuously energized cyclic group; maximal reduces runtime
   but increases starts. Both interactive event latencies are zero simulated
   seconds. Model/finite-window qualifications are explicit in the report.
-- Windows full suite: **3508 passed, 11 pre-existing report-format failures,
+- Windows full suite: **3538 passed, 11 pre-existing report-format failures,
   11 skipped** (`%b %-d`); Linux passes those report tests.
 
 **NOT RUN:** real HA automation/preset-to-device end-to-end trial, physical
