@@ -136,6 +136,8 @@ class PWMLoadBalancingManager:
                 zone.credit = -elapsed
                 zone.delivered = elapsed
                 zone.target_signature = zone.adapter.signature()
+            self._observed_group = {entity for entity, zone in self._zones.items() if zone.observed_on}
+            self._pump_sample = self._origin
             self.mode, self.reason = "active", "members_ready"
 
     def invalidate(self, entity_id: str, urgent: bool = False) -> None:

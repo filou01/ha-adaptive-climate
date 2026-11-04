@@ -443,6 +443,22 @@ async def test_200_pid_replans_cannot_move_existing_deadline_forever():
 
 
 @pytest.mark.asyncio
+async def test_known_startup_on_is_not_a_new_pump_start_or_full_duplicate_pulse():
+    sim = Simulation((720, 720))
+    sim.manager.mode = "waiting_for_members"
+    sim.manager._zones.clear()
+    sim.zones[0].on = True
+    sim.zones[0].last_change = -100
+    for zone in sim.zones:
+        sim.manager.register(zone)
+    await sim.update()
+    ledger = sim.manager._zones[sim.zones[0].entity_id]
+    assert ledger.delivered == 100
+    assert ledger.credit == 620
+    assert sim.manager.estimated_starts == 0
+
+
+@pytest.mark.asyncio
 async def test_late_callback_charges_real_elapsed_and_no_busy_loop():
     sim = Simulation((720, 720))
     await sim.update()
