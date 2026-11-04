@@ -427,6 +427,22 @@ async def test_fallback_during_priority_does_not_cycle_other_active_output():
 
 
 @pytest.mark.asyncio
+async def test_200_pid_replans_cannot_move_existing_deadline_forever():
+    sim = Simulation()
+    sim.manager.max_deferral = 120
+    await sim.update()
+    zone = sim.zones[3]
+    for n in range(200):
+        await sim.advance(float(n * 2))
+        zone.seconds = 1440 + (30 if n % 2 else 0)
+        await sim.update(3)
+        assert len(sim.timers) <= 1
+    assert zone.transitions[0] == (120, True)
+    ledger = sim.manager._zones[zone.entity_id]
+    assert ledger.requested == ledger.delivered + ledger.credit
+
+
+@pytest.mark.asyncio
 async def test_late_callback_charges_real_elapsed_and_no_busy_loop():
     sim = Simulation((720, 720))
     await sim.update()

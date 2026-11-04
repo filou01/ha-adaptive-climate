@@ -207,3 +207,38 @@ async def test_force_off_revokes_waiting_state_confirmation(actuator):
     await asyncio.wait_for(asyncio.gather(pending, stopping), timeout=1)
     assert actuator.state["switch.zone"] == "off"
     assert not actuator.dispatcher.emit.called
+
+
+@pytest.mark.asyncio
+async def test_slow_service_keeps_observed_cycle_and_pipeline_timestamps(actuator, monkeypatch):
+    from custom_components.adaptive_climate.managers import heater_cycle_bookkeeper as bookkeeper_module
+
+    monkeypatch.setattr(bookkeeper_module, "time", SimpleNamespace(monotonic=lambda: actuator.clock.now))
+
+    async def slow_ack(domain, name, data, **kwargs):
+        actuator.state[data["entity_id"]] = "on"
+        actuator.controller._actuation.observe(data["entity_id"], True)
+        actuator.clock.now += 20
+
+    actuator.hass.services.async_call.side_effect = slow_ack
+    actuator.controller._has_demand = True
+    await actuator.controller.async_turn_on(**actuator.callbacks)
+    assert actuator.tracking.changed == 10000
+    assert actuator.controller._heat_pipeline._valve_opened_at == 10000
+    for call in actuator.dispatcher.emit.call_args_list:
+        event = call.args[0]
+        assert 19.9 <= (bookkeeper_module.dt_util.utcnow() - event.timestamp).total_seconds() <= 20.1
+
+
+def test_cancelled_valve_event_cannot_emit_after_timer_cancel(actuator, monkeypatch):
+    from custom_components.adaptive_climate.managers import heater_timers as timers_module
+
+    callbacks = []
+    monkeypatch.setattr(
+        timers_module, "async_call_later", lambda hass, delay, callback: callbacks.append(callback) or (lambda: None)
+    )
+    timers = actuator.controller._timers
+    timers.schedule_heating_started("heat")
+    timers.cancel_all()
+    callbacks[0](None)
+    assert not actuator.dispatcher.emit.called

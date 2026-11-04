@@ -32,9 +32,12 @@ class HeaterActuationController:
         self._generation = 0
         self._commanded: dict[str, bool] = {}
         self._waiters: list[asyncio.Event] = []
+        self._observed_at: dict[str, float] = {}
 
     def observe(self, entity: str, active: bool) -> None:
         """Reconcile external output changes instead of trusting a cached command."""
+        if self._commanded.get(entity) != active:
+            self._observed_at[entity] = time.monotonic()
         self._commanded[entity] = active
 
     def invalidate(self) -> None:
@@ -140,6 +143,7 @@ class HeaterActuationController:
                     state = heater._hass.states.get(entity)
                     if state is None or state.state in ("unknown", "unavailable"):
                         return ActuationResult.UNAVAILABLE
+            command_at = time.monotonic()
             if not await self._write(entities, on):
                 # A partially successful ON must not leave untracked outputs ON.
                 if on:
@@ -152,7 +156,10 @@ class HeaterActuationController:
                 if not await self._write(entities, False):
                     return ActuationResult.FAILED
                 return ActuationResult.SUPERSEDED
-            now = time.monotonic()
+            confirmed_at = time.monotonic()
+            now = max((self._observed_at.get(entity, confirmed_at) for entity in entities), default=confirmed_at)
+            if not command_at <= now <= confirmed_at:
+                now = confirmed_at
             set_last_heat_cycle_time(now)
             set_is_heating(on)
             bookkeeper = heater._bookkeeper
@@ -167,12 +174,12 @@ class HeaterActuationController:
                 if not bookkeeper.cycle_active and bookkeeper.has_demand:
                     bookkeeper.cycle_active = True
                     bookkeeper.reset_pid_clamp_state()
-                    bookkeeper.emit_cycle_started(hvac_mode)
+                    bookkeeper.emit_cycle_started(hvac_mode, at=now)
                 if heater._dispatcher:
                     if heater._pwm and heater._valve_actuation_time > 0:
-                        heater._timers.schedule_heating_started(hvac_mode)
+                        heater._timers.schedule_heating_started(hvac_mode, opened_at=now)
                     else:
-                        bookkeeper.emit_heating_started(hvac_mode)
+                        bookkeeper.emit_heating_started(hvac_mode, at=now)
             else:
                 bookkeeper.increment_cycle_count(hvac_mode, is_now_off=True)
                 heater._timers.cancel_valve_open()
@@ -181,7 +188,9 @@ class HeaterActuationController:
                     pipeline.valve_closed(now)
                 if heater._dispatcher:
                     if heater._pwm and heater._valve_actuation_time > 0:
-                        heater._timers.schedule_heating_ended(hvac_mode, heater._last_committed_heat_snapshot)
+                        heater._timers.schedule_heating_ended(
+                            hvac_mode, heater._last_committed_heat_snapshot, closed_at=now
+                        )
                     else:
-                        bookkeeper.emit_heating_ended(hvac_mode, heater._last_committed_heat_snapshot)
+                        bookkeeper.emit_heating_ended(hvac_mode, heater._last_committed_heat_snapshot, at=now)
             return ActuationResult.CHANGED

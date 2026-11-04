@@ -157,13 +157,13 @@ class PWMCoordinationRegistry:
             return
         if (
             adapter.period <= 0
-            or not adapter.outputs
+            or len(adapter.outputs) != 1
             or entity._cooler_entity_id
             or entity._ac_mode
             or entity._heater_polarity_invert
             or any(split_entity_id(output)[0] != "switch" for output in adapter.outputs)
         ):
-            group.fail("unsupported zone: HEAT-only non-inverted switch PWM required")
+            group.fail("unsupported zone: HEAT-only PWM with one non-inverted switch per zone required")
             return
         heater = entity._heater_controller
         if heater.effective_min_open_time + heater._min_closed_time > adapter.period:
@@ -221,13 +221,23 @@ class PWMCoordinationRegistry:
                 if affected is not None and affected.mode != "fallback":
                     affected.fail("entity ID changed; reload coordination configuration")
         group = self._by_entity.get(entity_id)
+        owned_at_entry = group is not None and group.mode == "active"
         adapter = self._adapters.get(entity_id)
         if group is not None and adapter is not None:
             if adapter.entity.hvac_mode not in (HVACMode.HEAT, HVACMode.OFF):
                 group.fail("cooling or mixed mode")
                 return False
             adapter.blocked = False
-        return await group.update(entity_id) if group is not None else False
+        if group is None:
+            return False
+        result = await group.update(entity_id)
+        # A failed invocation is still consumed here. release() schedules the
+        # next legacy transaction; never retry ON through two paths in one call.
+        return result or owned_at_entry
+
+    def owns(self, entity_id: str) -> bool:
+        group = self._by_entity.get(entity_id)
+        return group is not None and group.mode == "active"
 
     async def refresh(self, entity_id: str) -> None:
         group = self._by_entity.get(entity_id)

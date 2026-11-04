@@ -193,3 +193,36 @@ async def test_entity_rename_revokes_old_group_owner(live):
     assert not await live.registry.apply(entity.entity_id)
     assert live.registry.groups[0].mode == "fallback"
     assert not live.commands
+
+
+@pytest.mark.asyncio
+async def test_stale_temperature_rechecks_original_safety_output(live):
+    entity = live.entities[0]
+    entity._sensor_stall = 60
+    entity._last_sensor_update = live.clock.now - 120
+    entity._output_safety = 0
+    await entity.apply()
+    assert not any(command[2] == "switch.a" for command in live.commands)
+
+
+def test_effective_schedule_target_is_used_in_priority_signature(live):
+    entity = live.entities[0]
+    entity._control_output_manager = SimpleNamespace(_last_effective_target=18.0)
+    adapter = live.registry._adapters[entity.entity_id]
+    assert adapter.signature()[0] == 18
+    entity._control_output_manager._last_effective_target = 22.0
+    assert adapter.signature()[0] == 22
+
+
+@pytest.mark.asyncio
+async def test_fallback_does_not_repeat_failed_start_in_same_control_transaction(live):
+    attempted = []
+
+    async def failed_service(domain, name, data, **kwargs):
+        attempted.append(name)
+        raise RuntimeError("unavailable relay")
+
+    live.entities[0].hass.services.async_call = failed_service
+    await live.entities[0].apply()
+    assert live.registry.groups[0].mode == "fallback"
+    assert attempted == ["turn_on", "turn_off"]

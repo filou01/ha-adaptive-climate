@@ -710,8 +710,9 @@ class HeaterController:
 
         registry = getattr(self._thermostat, "_pwm_coordination", None)
         if isinstance(registry, PWMCoordinationRegistry) and await registry.apply(thermostat_entity_id):
-            set_force_on(False)
-            set_force_off(False)
+            if registry.owns(thermostat_entity_id):
+                set_force_on(False)
+                set_force_off(False)
             return
 
         if self._pwm:

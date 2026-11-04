@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import time
 
 try:
     from homeassistant.core import HomeAssistant, callback
@@ -120,7 +121,7 @@ class HeaterTimerManager:
             self._valve_open_timer()
             self._valve_open_timer = None
 
-    def schedule_heating_started(self, hvac_mode: HVACMode) -> None:
+    def schedule_heating_started(self, hvac_mode: HVACMode, opened_at: float | None = None) -> None:
         """Schedule delayed HEATING_STARTED after valve fully opens.
 
         Args:
@@ -128,19 +129,26 @@ class HeaterTimerManager:
         """
         self._valve_open_timer = async_call_later(
             self._hass,
-            self._valve_actuation_time,
-            self._guard("open", lambda _: self._on_heating_started(hvac_mode)),
+            max(0.0, self._valve_actuation_time - (time.monotonic() - opened_at))
+            if opened_at is not None
+            else self._valve_actuation_time,
+            self._guard("open", lambda _: self._on_heating_started(hvac_mode, opened_at)),
         )
 
     @callback
-    def _on_heating_started(self, hvac_mode: HVACMode) -> None:
+    def _on_heating_started(self, hvac_mode: HVACMode, opened_at: float | None = None) -> None:
         """Fire when the valve-open delay elapses → emit HEATING_STARTED."""
-        self._bookkeeper.emit_heating_started(hvac_mode)
+        if opened_at is None:
+            self._bookkeeper.emit_heating_started(hvac_mode)
+        else:
+            self._bookkeeper.emit_heating_started(hvac_mode, at=opened_at + self._valve_actuation_time)
         self._valve_open_timer = None
 
     # ── Valve-close delay (HEATING_ENDED) ─────────────────────────────────────
 
-    def schedule_heating_ended(self, hvac_mode: HVACMode, committed_heat_seconds: float) -> None:
+    def schedule_heating_ended(
+        self, hvac_mode: HVACMode, committed_heat_seconds: float, closed_at: float | None = None
+    ) -> None:
         """Schedule delayed HEATING_ENDED at half the valve-close time.
 
         Args:
@@ -150,14 +158,21 @@ class HeaterTimerManager:
         half_valve_time = self._valve_actuation_time / 2.0
         self._valve_close_timer = async_call_later(
             self._hass,
-            half_valve_time,
-            self._guard("close", lambda _, c=committed_heat_seconds: self._on_heating_ended(hvac_mode, c)),
+            max(0.0, half_valve_time - (time.monotonic() - closed_at)) if closed_at is not None else half_valve_time,
+            self._guard("close", lambda _, c=committed_heat_seconds: self._on_heating_ended(hvac_mode, c, closed_at)),
         )
 
     @callback
-    def _on_heating_ended(self, hvac_mode: HVACMode, committed_heat_seconds: float) -> None:
+    def _on_heating_ended(
+        self, hvac_mode: HVACMode, committed_heat_seconds: float, closed_at: float | None = None
+    ) -> None:
         """Fire when the half-valve-close delay elapses → emit HEATING_ENDED."""
-        self._bookkeeper.emit_heating_ended(hvac_mode, committed_heat_seconds)
+        if closed_at is None:
+            self._bookkeeper.emit_heating_ended(hvac_mode, committed_heat_seconds)
+        else:
+            self._bookkeeper.emit_heating_ended(
+                hvac_mode, committed_heat_seconds, at=closed_at + self._valve_actuation_time / 2
+            )
         self._valve_close_timer = None
 
     # ── Demand→0 debounce (SETTLING_STARTED) ──────────────────────────────────
