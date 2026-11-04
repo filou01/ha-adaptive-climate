@@ -124,7 +124,8 @@ class HeaterActuationController:
         heater = self._heater
         entities = heater.get_entities(hvac_mode)
         if force:
-            heater._timers.cancel_all()
+            heater.abort_active_cycle()
+            heater._bookkeeper.has_demand = False
         async with self._lock:
             if on and generation != self._generation:
                 return ActuationResult.SUPERSEDED

@@ -566,7 +566,10 @@ class HeaterController:
     ) -> None:
         """Turn heater toggleable device off. Enforces min-on-time for compressor protection."""
         if force:
-            self._timers.cancel_all()
+            # Forced shutdown (e.g. HVAC mode change) invalidates the current
+            # learning session even if the physical relay is already off.
+            self.abort_active_cycle()
+            self._bookkeeper.has_demand = False
 
         entities = self.get_entities(hvac_mode)
         thermostat_entity_id = self._thermostat.entity_id
@@ -681,30 +684,7 @@ class HeaterController:
         # Cache is_active() result to avoid redundant HA state queries
         device_is_active = self.is_active(hvac_mode)
 
-        # Track demand state for cycle tracking
-        old_has_demand = self._bookkeeper.has_demand
-        new_has_demand = abs(control_output) > 0
-        self._bookkeeper.has_demand = new_has_demand
-
-        # Demand dropped to 0 → debounce SETTLING_STARTED
-        if old_has_demand and not new_has_demand and self._bookkeeper.cycle_active:
-            if self._pwm and self._dispatcher:
-                self._timers.schedule_demand_zero_debounce(hvac_mode, self._bookkeeper.get_pid_was_clamped())
-            else:
-                if self._dispatcher:
-                    self._bookkeeper.emit_settling_started(hvac_mode, self._bookkeeper.get_pid_was_clamped())
-                self._bookkeeper.cycle_active = False
-        elif new_has_demand and self._timers.demand_zero_active:
-            self._timers.cancel_demand_zero()
-
-        # Low-output maintenance timeout (maintenance cycles that never reach 0)
-        if self._pwm and self._bookkeeper.cycle_active and self._dispatcher:
-            low_output = 0 < abs(control_output) < MIN_OUTPUT_THRESHOLD
-            if low_output:
-                if not self._timers.low_output_active and not self._timers.demand_zero_active:
-                    self._timers.schedule_low_output_timeout(hvac_mode, self._bookkeeper.get_pid_was_clamped())
-            elif abs(control_output) >= MIN_OUTPUT_THRESHOLD:
-                self._timers.cancel_low_output()
+        self._timers.update_learning_demand(control_output, hvac_mode)
 
         from .pwm_coordination import PWMCoordinationRegistry
 
