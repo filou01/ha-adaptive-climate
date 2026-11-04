@@ -216,7 +216,7 @@ async def test_crash_between_on_intent_and_confirmation_reconciles_off_without_r
 
 
 @pytest.mark.asyncio
-async def test_old_uncertain_on_is_reconciled_before_allocating_a_new_period(journal):
+async def test_old_uncertain_on_consumes_recovery_period_before_next_ordinary_start(journal):
     live = journal.live
     await live.entities[0].apply()
     saved = journal.disk.data["pwm_coordination"]["pump"]["zones"]["climate.a"]
@@ -226,8 +226,12 @@ async def test_old_uncertain_on_is_reconciled_before_allocating_a_new_period(jou
     await live.entities[0].apply()
     assert live.state[f"{live.domain}.a"] == "off"
     assert journal.ledger().requested == 3000
-    assert journal.ledger().credit == 1500
+    assert journal.ledger().credit == 0
+    assert journal.ledger().last_start_epoch == 24  # uncertain ON may occupy the recovery period
     journal.advance(600)
+    await live.entities[0].apply()
+    assert live.state[f"{live.domain}.a"] == "off"
+    journal.advance(3000)  # next stable logical period, not a rolling cooldown
     await live.entities[0].apply()
     assert live.state[f"{live.domain}.a"] == "on"
 

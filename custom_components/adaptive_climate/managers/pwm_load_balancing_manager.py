@@ -75,6 +75,11 @@ class Ledger:
     allocated_now: bool = False
     restart_pending: bool = False
     pending_on: bool = False
+    pending_start_epoch: int | None = None
+    allocation_started: bool = False
+    last_start_epoch: int = -1
+    last_ordinary_start_epoch: int = -1
+    suppressed_ordinary_starts: int = 0
     uncertain_seconds: float = 0.0
     max_deferral: float = 0.0
     priority_blocked_count: int = 0
@@ -157,6 +162,9 @@ class PWMLoadBalancingManager:
                 elapsed = zone.adapter.active_elapsed(self._origin) if zone.observed_on else 0.0
                 zone.credit = -elapsed
                 zone.delivered = elapsed
+                if zone.observed_on:
+                    zone.last_start_epoch = 0
+                    zone.allocation_started = True
                 zone.target_signature = zone.adapter.signature()
             self._observed_group = {entity for entity, zone in self._zones.items() if zone.observed_on}
             self._pump_sample = self._origin
@@ -200,6 +208,9 @@ class PWMLoadBalancingManager:
             elapsed = max(0.0, now - zone.sampled_at)
             zone.credit -= elapsed
             zone.delivered += elapsed
+        if observed and not zone.observed_on:
+            zone.allocation_started = True
+            zone.last_start_epoch = max(zone.last_start_epoch, self.period_epoch(now))
         zone.observed_on, zone.sampled_at = observed, now
         self._metrics(now)
 
@@ -227,6 +238,32 @@ class PWMLoadBalancingManager:
         if zone is not None:
             self._sample(zone, self._now())
 
+    def period_epoch(self, now: float) -> int:
+        """Stable group-origin period of an observed start, independent of phase."""
+        if self._origin is None or self._period <= 0:
+            return -1
+        return int((now - self._origin) // self._period)
+
+    def _suppress_ordinary_restart(self, zone: Ledger, now: float) -> bool:
+        """A prior start also spends ordinary allowance when it was a priority pulse.
+
+        Withdraw unserviceable positive adjustments, keeping signed overdelivery
+        debt. They must not become a later minimum-length catch-up pulse.
+        """
+        if (
+            zone.adapter.active()
+            or zone.priority
+            or zone.pulse.continuous
+            or (not zone.allocation_started and zone.last_start_epoch < self.period_epoch(now))
+        ):
+            return False
+        if zone.credit > 0:
+            zone.cancelled_balance += zone.credit
+            zone.credit = 0.0
+            zone.suppressed_ordinary_starts += 1
+        zone.owed_since = None
+        return True
+
     def _allocate(self, zone: Ledger, now: float) -> None:
         adapter = zone.adapter
         zone.allocated_now = False
@@ -246,17 +283,29 @@ class PWMLoadBalancingManager:
         output = adapter.output()
         signature = adapter.signature()
         changed = signature != zone.target_signature or zone.pending_priority
-        logical_epoch = int((now - self._origin) // self._period)
-        new_epoch = (
-            zone.epoch < 0
-            or (zone.next_budget_at is not None and now >= zone.next_budget_at)
-            or (changed and logical_epoch > zone.epoch)
+        logical_epoch = self.period_epoch(now)
+        new_epoch = zone.epoch < 0 or (
+            logical_epoch > zone.epoch and (zone.next_budget_at is None or now >= zone.next_budget_at or changed)
         )
         low_duty = zone.pulse.accumulator_debit > 0
         if low_duty and (zone.observed_on or zone.credit > 0) and not changed:
             # A reserved accumulator pulse is not replaced on ordinary PID ticks.
             if zone.next_budget_at is not None and zone.next_budget_at <= now:
-                zone.next_budget_at = now + self._period
+                skipped = int((now - zone.next_budget_at) // self._period) + 1
+                zone.next_budget_at += skipped * self._period
+            return
+        if (
+            low_duty
+            and not zone.observed_on
+            and zone.credit <= 0
+            and not new_epoch
+            and not changed
+            and output == zone.output_value
+            and (zone.allocation_started or zone.last_start_epoch >= logical_epoch)
+        ):
+            # Keep earning raw low-duty credit without minting repeated pulse
+            # reservations while this period's start allowance is consumed.
+            adapter.prepare(now)
             return
         if low_duty and not zone.observed_on and zone.credit <= 0:
             zone.allocation = 0.0
@@ -264,17 +313,36 @@ class PWMLoadBalancingManager:
         if new_epoch or output != zone.output_value or changed or zone.pulse.seconds == 0:
             pulse = adapter.prepare(now)
             if new_epoch:
+                zone.allocation_started = zone.observed_on
                 # One entitlement per observed period; never replay missed
                 # periods after an event-loop stall or HA restart.
                 zone.credit += pulse.seconds
             else:
-                zone.credit += pulse.seconds - zone.allocation
+                adjustment = pulse.seconds - zone.allocation
+                closed = (
+                    not changed
+                    and not zone.priority
+                    and not zone.observed_on
+                    and not pulse.continuous
+                    and (zone.allocation_started or zone.last_start_epoch >= logical_epoch)
+                )
+                if closed:
+                    # This period's contiguous pulse has ended. Settle BOTH
+                    # signs of a later PID revision into the closed balance;
+                    # otherwise alternating increases/decreases ratchet a fake
+                    # negative debt when positive revisions are withdrawn.
+                    zone.cancelled_balance += adjustment
+                    if adjustment > 0:
+                        zone.suppressed_ordinary_starts += 1
+                else:
+                    zone.credit += adjustment
                 if changed and not zone.observed_on and pulse.seconds > 0 and zone.credit <= 0:
                     # A fresh eligible target/mode transaction can authorize a
                     # new legacy pulse even after the previous quantum was paid.
                     # Keep all delivered history; do not replay an old slot.
                     zone.credit += zone.allocation
                     zone.requested += zone.allocation
+                    zone.allocation_started = False
             zone.requested += pulse.seconds if new_epoch else pulse.seconds - zone.allocation
             zone.allocation = pulse.seconds
             zone.pulse = pulse
@@ -297,6 +365,7 @@ class PWMLoadBalancingManager:
         elif zone.credit <= 0:
             zone.owed_since = None
             zone.priority = False
+        self._suppress_ordinary_restart(zone, now)
 
     async def update(self, entity_id: str, reason: str = "control") -> bool:
         """Return True only while this group owns the normal output path."""
@@ -382,6 +451,8 @@ class PWMLoadBalancingManager:
                 if on:
                     if active or not eligible or zone.credit <= 0:
                         continue
+                    if self._suppress_ordinary_restart(zone, self._now()):
+                        continue
                     deadline = (zone.owed_since if zone.owed_since is not None else now) + self.max_deferral
                     slot = cycle_start + self.schedule.phases[entity]
                     due = now if zone.priority else min(max(now, slot), deadline)
@@ -399,16 +470,34 @@ class PWMLoadBalancingManager:
                     next_times.append(due)
                     continue
                 version = zone.version
+                was_priority = zone.priority
+                was_continuous = zone.pulse.continuous
                 zone.pending_on = on
+                zone.pending_start_epoch = self.period_epoch(self._now()) if on else None
                 await self.save_checkpoint()
                 if version != zone.version or generation != self._generation:
                     zone.pending_on = False
+                    zone.pending_start_epoch = None
                     return
+                # Output observations can change while disk I/O yields without
+                # changing demand generation. Re-read both state and allowance.
+                if on and (
+                    not adapter.eligible()
+                    or adapter.active()
+                    or zone.credit <= 0
+                    or self._suppress_ordinary_restart(zone, self._now())
+                ):
+                    zone.pending_on = False
+                    zone.pending_start_epoch = None
+                    continue
                 result = await adapter.command(on)
                 zone.pending_on = False
+                zone.pending_start_epoch = None
                 sampled = self._now()
                 self._sample(zone, sampled)
                 if result == ActuationResult.CHANGED and on:
+                    if not was_priority and not was_continuous:
+                        zone.last_ordinary_start_epoch = zone.last_start_epoch
                     adapter.commit_credit(zone.pulse.accumulator_debit)
                 await self.save_checkpoint()
                 if version != zone.version or generation != self._generation:
@@ -455,6 +544,10 @@ class PWMLoadBalancingManager:
             "observed_on_seconds": round(zone.delivered, 1) if zone else 0.0,
             "cancelled_balance_seconds": round(zone.cancelled_balance, 1) if zone else 0.0,
             "restart_uncertain_seconds": round(zone.uncertain_seconds, 1) if zone else 0.0,
+            "last_start_epoch": zone.last_start_epoch if zone else -1,
+            "last_ordinary_start_epoch": zone.last_ordinary_start_epoch if zone else -1,
+            "suppressed_ordinary_starts": zone.suppressed_ordinary_starts if zone else 0,
+            "remaining_credit_seconds": round(zone.credit, 1) if zone else 0.0,
             "unmet_debt_seconds": round(max(0.0, zone.credit), 1) if zone else 0.0,
             "priority_start_count": zone.priority_start_count if zone else 0,
             "priority_start_latency_ms": zone.priority_latency_ms if zone else None,

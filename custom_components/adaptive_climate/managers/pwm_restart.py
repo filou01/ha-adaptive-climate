@@ -113,6 +113,11 @@ def snapshot(group: PWMLoadBalancingManager, now: float, wall: float) -> dict[st
             "delivered": zone.delivered,
             "cancelled": zone.cancelled_balance,
             "pending_on": zone.pending_on,
+            "pending_start_epoch": zone.pending_start_epoch,
+            "last_start_epoch": zone.last_start_epoch,
+            "allocation_started": zone.allocation_started,
+            "last_ordinary_start_epoch": zone.last_ordinary_start_epoch,
+            "suppressed_ordinary_starts": zone.suppressed_ordinary_starts,
             "uncertain": zone.uncertain_seconds,
         }
     return {
@@ -156,7 +161,7 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
             number(row["signature"][0])
         if row["next_at"] is not None:
             number(row["next_at"])
-        for key in ("priority", "pending_priority"):
+        for key in ("priority", "pending_priority", "allocation_started"):
             if not isinstance(row.get(key, False), bool):
                 raise ValueError("Invalid PWM priority flag")
         for key in ("priority_at", "owed_at"):
@@ -167,6 +172,27 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
                 raise ValueError("Invalid PWM priority counter")
         if row.get("priority_latency") is not None:
             number(row["priority_latency"])
+        for key in (
+            "last_start_epoch",
+            "last_ordinary_start_epoch",
+            "pending_start_epoch",
+            "suppressed_ordinary_starts",
+        ):
+            value = row.get(key)
+            if key in row and (value is not None or key != "pending_start_epoch"):
+                number(value)
+                minimum = 0 if key in ("pending_start_epoch", "suppressed_ordinary_starts") else -1
+                if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+                    raise ValueError("Invalid PWM start entitlement")
+                latest_epoch = int((number(row.get("at", saved_at)) - origin) // group._period)
+                if key != "suppressed_ordinary_starts" and value > latest_epoch:
+                    raise ValueError("PWM start entitlement is in the future")
+        if (
+            "last_start_epoch" in row
+            and "last_ordinary_start_epoch" in row
+            and row["last_ordinary_start_epoch"] > row["last_start_epoch"]
+        ):
+            raise ValueError("Inconsistent PWM start entitlement")
     group._origin = now - max(0.0, wall - origin)
     for entity, zone in group._zones.items():
         if entity in group.restored_members:
@@ -191,6 +217,30 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
         zone.priority_blocked_count = int(row.get("blocked_count", 0))
         zone.priority_blocked_reason = row.get("blocked_reason")
         zone.max_deferral = number(row.get("max_deferral", 0))
+        if "last_start_epoch" in row:
+            zone.last_start_epoch = row["last_start_epoch"]
+        elif row["delivered"] > 0 or row["controller"]["on"] or row["pending_on"]:
+            # Preview-6 journals have no explicit allowance. The last known edge
+            # conservatively spends that period, including an OFF edge after a
+            # wrapped pulse. Do not retroactively classify it as ordinary.
+            edge = row["controller"]["switch_at"]
+            edge = number(edge) if edge is not None else row_at
+            zone.last_start_epoch = max(-1, int((edge - origin) // group._period))
+        zone.allocation_started = (
+            row.get("allocation_started", row["controller"]["on"] or zone.last_start_epoch >= zone.epoch)
+            or row["pending_on"]
+        )
+        zone.last_ordinary_start_epoch = row.get("last_ordinary_start_epoch", -1)
+        zone.suppressed_ordinary_starts = row.get("suppressed_ordinary_starts", 0)
+        if row["pending_on"]:
+            pending_epoch = row.get("pending_start_epoch")
+            if pending_epoch is None:
+                pending_epoch = int((row_at - origin) // group._period)
+            zone.last_start_epoch = max(zone.last_start_epoch, pending_epoch)
+            if zone.adapter.active():
+                # The uncertain ON may belong to the recovery period. Reconcile
+                # it OFF without allowing a second ordinary start in that period.
+                zone.last_start_epoch = max(zone.last_start_epoch, group.period_epoch(now))
         zone.pulse = Pulse(*row["pulse"])
         next_at = row["next_at"]
         zone.next_budget_at = now + number(next_at) - wall if next_at is not None else None
