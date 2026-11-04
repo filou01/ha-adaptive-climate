@@ -68,18 +68,32 @@ See [architecture, changed files, evidence and limitations](../pwm-restart-safet
 The initial upgrade has no past journal; independent fallback retains legacy
 restart behavior. There is no optimizer dependency or learning reset.
 
+Preview 7 separates ordinary start allowance from signed time credit and
+tracks the actual group-origin epoch of observed/uncertain starts. Completed
+allocations cannot reopen due to PID noise, stale phase deadlines or minimum-OFF
+expiry. Closed-period revisions settle both signs without ratcheting false debt;
+real minimum-ON overrun remains signed. Optional quota fields survive restart
+and infer preview-6 journals conservatively. Deliberate priority and explicit
+effective-target contracts remain; a priority pulse also spends ordinary allowance.
+See [reproduction, changed files, compatibility and evidence](../pwm-ordinary-starts.md).
+
 ## Validation
 
-- Linux Python 3.11.18: **3628 passed, 11 skipped**, full suite, exit 0.
-- Linux Python 3.12.3: **3628 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.11.18: **3682 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3682 passed, 11 skipped**, full suite, exit 0.
+- New ordinary-entitlement regressions: **54 passed**, including two 24h PID-noise replays.
 - New PWM restart/storage regressions and simulations: **50 passed**.
 - New shared-startup regressions: **6 passed** in each full suite.
 - New learning hotfix regressions: **29 passed** in each full suite.
-- Targeted PWM regressions: **147 passed**, no xfails.
+- Targeted PWM regressions: **201 passed**, no xfails.
 - Ruff check/format and Pyright: **PASS**.
-- HACS and hassfest: **PASS** for the preview 6 source commit.
+- HACS and hassfest: **PASS** for the preview 7 source commit.
 - GitHub Linux 3.11/3.12 matrix: **PASS**, including full tests, lint, format
-  and types. Exact-source links and local results are in the restart report.
+  and types. Exact-source links and local results are in the ordinary-start report.
+- Two additional 24h PID-noise runs: each of four zones starts exactly once
+  ordinarily per group-origin period; 24 starts per zone/day and 24 pump starts,
+  with identical delivered seconds in both overlap strategies. Minimal limits
+  high-weight overlap to 5760s versus maximal 17280s in this model.
 - Four additional 24h persistence replays: switch/input_boolean, with zero or
   143 unclean restarts. All preserve 36000 ON seconds per zone, 24 starts and
   66240 group ON seconds, with zero ending debt. Unconfirmed budget is reported
@@ -90,9 +104,9 @@ restart behavior. There is no optimizer dependency or learning reset.
   preserves a continuously energized cyclic group; maximal reduces runtime
   but increases starts. Both interactive event latencies are zero simulated
   seconds. Model/finite-window qualifications are explicit in the report.
-- Windows real-controller restart/storage regressions: **50 passed**.
-  Full Windows suite for preview 6: **NOT RUN**. Preview 2 had 3538 passed,
-  11 skipped and 11 pre-existing report-format failures (`%b %-d`).
+- Windows full suite: **3671 passed, 11 skipped**, with **11 pre-existing
+  report-date-format failures** (`%b %-d`). The new 54 tests all pass; Linux
+  passes the report tests. No unrelated reporting changes are included.
 
 **NOT RUN:** real HA automation/preset-to-device end-to-end trial, physical
 relays/pump/flow, supervised 24h hydronic run with real minimum times, Raspberry

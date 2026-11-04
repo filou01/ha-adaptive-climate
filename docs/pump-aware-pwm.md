@@ -73,6 +73,21 @@ Both modes preserve the hard safety/delivery rules. Neither adds heat to fill
 a pump gap. Handover overlap is electrical overlap; it proves no hydraulic flow.
 Changes to group configuration or strategy require a Home Assistant restart.
 
+## Ordinary pulses
+
+Preview 7 permits at most one ordinary OFF-to-ON transition per zone and stable
+group-origin PWM epoch. Each allocation's pulse stays contiguous. Minimum OFF
+expiry, PID noise, other zones and replanning do not grant another start.
+While ON, demand can adjust remaining runtime. After closure, ordinary demand
+revisions settle into the signed cancelled balance; no positive catch-up queue
+or artificial negative debt is created. Actual overrun debt remains signed.
+
+True target/mode changes retain priority, including effective schedule/preset
+target changes under the original immediate-demand contract. Priority and direct
+100% starts are explicit exceptions and still require genuine eligible demand
+and minimum protection. Continuing ON across a boundary is not interrupted.
+See [period entitlement, diagnostics, restart compatibility and tests](pwm-ordinary-starts.md).
+
 ## Immediate demand and accounting
 
 An eligible setpoint increase or OFF->HEAT transition is evaluated immediately

@@ -30,6 +30,7 @@
 > Preview 4 supports [input_boolean relay proxies such as NSPanel/ESPHome](docs/input-boolean-pwm.md).
 > Preview 5 fixes [PWM callbacks dispatched outside the HA event loop](docs/pwm-callback-safety.md).
 > Preview 6 adds [PWM budget and minimum-time recovery across HA restarts](docs/pwm-restart-safety.md).
+> Preview 7 enforces [one ordinary PWM start per logical period](docs/pwm-ordinary-starts.md), including after restart.
 > The fork's `main` remains the upstream baseline; preview releases identify
 > the development commit and remaining validation requirements.
 

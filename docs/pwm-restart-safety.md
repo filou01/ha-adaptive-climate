@@ -1,5 +1,9 @@
 # PWM restart journals — preview 6
 
+> Preview 7 adds [ordinary-start entitlement recovery](pwm-ordinary-starts.md).
+> It also conservatively consumes the recovery period for an uncertain ON present
+> at startup; minimum-OFF expiry alone cannot authorize another ordinary pulse.
+
 Repeated HA restarts used to discard the coordinator's period origin and delivery
 ledger. A zone could receive a fresh full pulse despite having already completed
 one in the same period. Preview `v0.67.1-pwm.6` journals these reservations and
