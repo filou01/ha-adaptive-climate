@@ -31,9 +31,9 @@ I01–I19 coverage mapping and measured simulation results are in
 
 ## Validation
 
-- Linux Python 3.11.18: **3519 passed, 11 skipped**, full suite, exit 0.
-- Linux Python 3.12.3: **3519 passed, 11 skipped**, full suite, exit 0.
-- Targeted PWM regressions: **73 passed**, no xfails.
+- Linux Python 3.11.18: **3520 passed, 11 skipped**, full suite, exit 0.
+- Linux Python 3.12.3: **3520 passed, 11 skipped**, full suite, exit 0.
+- Targeted PWM regressions: **74 passed**, no xfails.
 - Ruff check/format and Pyright: **PASS**.
 - HACS action and hassfest: **PASS** on the final source commit; links in report.
 - GitHub Linux 3.11/3.12 matrix: both jobs **PASS**, including full tests, lint,

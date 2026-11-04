@@ -141,22 +141,22 @@ are estimates from configured electrical outputs, not measured pump feedback.
 The final release notes record exact commands, counts, commit and CI links.
 Do not infer hardware approval from a passing simulation or repository check.
 
-Final source commit: `254b878cec851ca48da8fca89b600618a8a36052`.
+Final source commit: `5fbe2b44614e10f4b574c7f897af99c9c83cdd15`.
 Local Linux release checks use Ubuntu/WSL and project-local environments.
 
 | Validation | Measured result |
 | --- | --- |
-| Linux CPython 3.11.18, full pytest, cache plugin disabled | 3519 passed, 11 skipped, 6 existing warnings; 59.70 s; exit 0. |
-| Linux CPython 3.12.3, full pytest, cache plugin disabled | 3519 passed, 11 skipped, 6 existing warnings; 59.21 s; exit 0. |
-| Targeted PWM suite on Windows | 73 passed; exit 0. |
-| Windows CPython 3.14.5, full suite | 3508 passed, 11 existing report-format failures, 11 skipped; 51.13 s; exit 1. |
+| Linux CPython 3.11.18, full pytest, cache plugin disabled | 3520 passed, 11 skipped, 6 existing warnings; 61.73 s; exit 0. |
+| Linux CPython 3.12.3, full pytest, cache plugin disabled | 3520 passed, 11 skipped, 6 existing warnings; 60.38 s; exit 0. |
+| Targeted PWM suite on Windows | 74 passed; exit 0. |
+| Windows CPython 3.14.5, full suite at source 254b878 | 3508 passed, 11 existing report-format failures, 11 skipped; 51.13 s; exit 1. |
 | Ruff 0.17.3 check | PASS. |
 | Ruff format check | PASS, 247 files already formatted. |
 | Pyright 1.1.414 | PASS, 0 errors, 0 warnings, 0 informations. |
 | Handoff reference checker | PASS, 10 declared scenarios and 140% interval arithmetic. |
-| [HACS action, latest source](https://github.com/filou01/ha-adaptive-climate/actions/runs/41868272354) | PASS after enabling issues and adding repository topics required by HACS. No checks suppressed. |
-| [hassfest, latest source](https://github.com/filou01/ha-adaptive-climate/actions/runs/41868272578) | PASS. |
-| [GitHub Linux matrix, latest source](https://github.com/filou01/ha-adaptive-climate/actions/runs/41868272539) | Both `test (3.11)` and `test (3.12)` jobs completed successfully, including pytest, Ruff and Pyright. |
+| [HACS action, latest source](https://github.com/filou01/ha-adaptive-climate/actions/runs/41869882172) | PASS after enabling issues and adding repository topics required by HACS. No checks suppressed. |
+| [hassfest, latest source](https://github.com/filou01/ha-adaptive-climate/actions/runs/41869882227) | PASS. |
+| [GitHub Linux matrix, latest source](https://github.com/filou01/ha-adaptive-climate/actions/runs/41869882193) | Both `test (3.11)` and `test (3.12)` jobs completed successfully, including pytest, Ruff and Pyright. |
 
 The eleven skipped tests and six warnings also occur in the existing suite;
 they are not expected-failure exemptions for the PWM feature. No new PWM test
