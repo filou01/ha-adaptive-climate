@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from typing import Any, TYPE_CHECKING
 
 from homeassistant.components.climate import HVACMode
-from homeassistant.core import split_entity_id
+from homeassistant.core import callback, split_entity_id
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .heater_actuation import ActuationResult
@@ -135,13 +135,22 @@ class PWMCoordinationRegistry:
                 group["handover_overlap_seconds"],
                 group["max_deferral_seconds"],
                 group["overlap_strategy"],
-                lambda delay, callback: async_call_later(hass, delay, lambda _: callback()),
+                self._schedule_later,
                 self._create_task,
                 now=time.monotonic,
             )
             self.groups.append(manager)
             for zone in manager.members:
                 self._by_entity[zone] = manager
+
+    def _schedule_later(self, delay: float, action: Callable[[], None]) -> Callable[[], None]:
+        """Keep timer work and scheduler state on the HA event loop."""
+
+        @callback
+        def wake(_: Any) -> None:
+            action()
+
+        return async_call_later(self.hass, delay, wake)
 
     def _create_task(self, coroutine: object) -> None:
         if isinstance(coroutine, Coroutine):
@@ -178,6 +187,7 @@ class PWMCoordinationRegistry:
         group.register(adapter)
         self._check_outputs()
 
+        @callback
         def state_changed(event: Any) -> None:
             data = event.data
             output = data.get("entity_id")

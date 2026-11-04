@@ -8,6 +8,8 @@ from collections.abc import Callable
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import callback
+
 if TYPE_CHECKING:
     from .heater_controller import HeaterController
 
@@ -64,7 +66,12 @@ class HeaterActuationController:
             return True
         event = asyncio.Event()
         self._waiters.append(event)
-        cancel = self._listen(entity, lambda _: event.set())
+
+        @callback
+        def state_changed(_: Any) -> None:
+            event.set()
+
+        cancel = self._listen(entity, state_changed)
         generation = self._generation
         try:
             async with asyncio.timeout(10):
