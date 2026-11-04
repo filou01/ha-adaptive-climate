@@ -10,9 +10,9 @@ import asyncio
 import logging
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from .heater_actuation import ActuationResult
 from .pwm_load_balancing_optimizer import Schedule, ZoneRequest, plan
@@ -28,6 +28,8 @@ class ZoneAdapter(Protocol):
     period: float
     outputs: tuple[str, ...]
 
+    def ready(self) -> bool: ...
+    def checkpoint_state(self, now: float, wall: float) -> dict[str, Any]: ...
     def eligible(self) -> bool: ...
     def available(self) -> bool: ...
     def active(self) -> bool: ...
@@ -68,9 +70,16 @@ class Ledger:
     pending_priority: bool = False
     next_budget_at: float | None = None
     allocated_now: bool = False
+    restart_pending: bool = False
+    pending_on: bool = False
+    uncertain_seconds: float = 0.0
     max_deferral: float = 0.0
     priority_blocked_count: int = 0
     priority_blocked_reason: str | None = None
+
+
+class PWMCheckpointError(RuntimeError):
+    """The last durable PWM reservation could not be updated."""
 
 
 class PWMLoadBalancingManager:
@@ -96,6 +105,10 @@ class PWMLoadBalancingManager:
         self._task = create_task
         self._now = now
         self._zones: dict[str, Ledger] = {}
+        self.checkpoint: Callable[[], Awaitable[None]] | None = None
+        self.on_register: Callable[[], None] | None = None
+        self.restored_members: set[str] = set()
+        self.on_checkpoint_failure: Callable[[], Awaitable[None]] | None = None
         self._lock = asyncio.Lock()
         self._cancel: Callable[[], None] | None = None
         self._generation = 0
@@ -121,6 +134,10 @@ class PWMLoadBalancingManager:
             self.fail("duplicate entity registration")
             return
         self._zones[adapter.entity_id] = Ledger(adapter, self.members[adapter.entity_id], self._now(), adapter.active())
+        if self.on_register is not None:
+            self.on_register()
+            if self.mode == "fallback":
+                return
         if set(self._zones) == set(self.members):
             periods = {zone.adapter.period for zone in self._zones.values()}
             outputs = [output for zone in self._zones.values() for output in zone.adapter.outputs]
@@ -128,6 +145,8 @@ class PWMLoadBalancingManager:
                 self.fail("mixed/nonpositive PWM periods or duplicate heater outputs")
                 return
             self._period = periods.pop()
+            if self._origin is not None:
+                return  # A journal already restored earlier members; never reset them.
             self._origin = self._now()
             for zone in self._zones.values():
                 zone.sampled_at = self._origin
@@ -208,6 +227,9 @@ class PWMLoadBalancingManager:
     def _allocate(self, zone: Ledger, now: float) -> None:
         adapter = zone.adapter
         zone.allocated_now = False
+        if zone.restart_pending and not adapter.ready():
+            return
+        zone.restart_pending = False
         if not adapter.eligible():
             zone.cancelled_balance += zone.credit
             zone.credit = zone.allocation = 0.0
@@ -257,6 +279,11 @@ class PWMLoadBalancingManager:
                 zone.epoch = logical_epoch
                 zone.allocated_now = True
             zone.output_value, zone.target_signature = output, signature
+        if zone.pulse.continuous and not zone.observed_on and zone.credit <= 0:
+            # Direct 100% is authoritative continuous demand, not an ordinary slot.
+            extra = zone.pulse.seconds - zone.credit
+            zone.requested += extra
+            zone.credit += extra
         if (changed and zone.credit > 0) or (zone.pulse.continuous and not zone.priority):
             zone.priority = True
             zone.priority_at = now
@@ -277,10 +304,23 @@ class PWMLoadBalancingManager:
                 if self.mode != "active":
                     return False
                 await self._reconcile(reason)
+        except PWMCheckpointError:
+            _LOGGER.exception("PWM group %s cannot persist restart state", self.name)
+            self.fail("restart_storage_error", release=False)
+            if self.on_checkpoint_failure is not None:
+                await self.on_checkpoint_failure()
         except Exception:
             _LOGGER.exception("PWM group %s failed", self.name)
             self.fail("scheduler_exception")
         return self.mode == "active"
+
+    async def save_checkpoint(self) -> None:
+        """A failed journal must not authorize an unrecorded heater start."""
+        if self.checkpoint is not None:
+            try:
+                await self.checkpoint()
+            except Exception as err:
+                raise PWMCheckpointError from err
 
     async def _reconcile(self, reason: str) -> None:
         now = self._now()
@@ -340,16 +380,24 @@ class PWMLoadBalancingManager:
                     next_times.append(due)
                     continue
                 version = zone.version
+                zone.pending_on = on
+                await self.save_checkpoint()
+                if version != zone.version or generation != self._generation:
+                    zone.pending_on = False
+                    return
                 result = await adapter.command(on)
+                zone.pending_on = False
                 sampled = self._now()
                 self._sample(zone, sampled)
+                if result == ActuationResult.CHANGED and on:
+                    adapter.commit_credit(zone.pulse.accumulator_debit)
+                await self.save_checkpoint()
                 if version != zone.version or generation != self._generation:
                     return
                 if result in (ActuationResult.FAILED, ActuationResult.UNAVAILABLE):
                     self.fail(f"actuation_{result}")
                     return
                 if result == ActuationResult.CHANGED and on:
-                    adapter.commit_credit(zone.pulse.accumulator_debit)
                     if zone.priority:
                         zone.priority_start_count += 1
                         started = zone.priority_at if zone.priority_at is not None else sampled
@@ -369,6 +417,7 @@ class PWMLoadBalancingManager:
                 self._task(self.update(next(iter(self._zones)), "timer"))
 
         self._cancel = self._later(max(0.001, when - self._now()), wake)
+        await self.save_checkpoint()
 
     def diagnostics(self, entity_id: str) -> dict[str, object]:
         zone = self._zones.get(entity_id)
@@ -386,6 +435,7 @@ class PWMLoadBalancingManager:
             "requested_seconds": round(zone.requested, 1) if zone else 0.0,
             "observed_on_seconds": round(zone.delivered, 1) if zone else 0.0,
             "cancelled_balance_seconds": round(zone.cancelled_balance, 1) if zone else 0.0,
+            "restart_uncertain_seconds": round(zone.uncertain_seconds, 1) if zone else 0.0,
             "unmet_debt_seconds": round(max(0.0, zone.credit), 1) if zone else 0.0,
             "priority_start_count": zone.priority_start_count if zone else 0,
             "priority_start_latency_ms": zone.priority_latency_ms if zone else None,

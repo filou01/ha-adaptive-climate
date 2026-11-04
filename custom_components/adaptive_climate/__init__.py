@@ -1047,6 +1047,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 _LOGGER.error("Failed to save manifold state on shutdown: %s", e)
 
         await async_save_water_temp_state_now(hass)
+        registry = hass.data[DOMAIN].get(CONF_PWM_COORDINATION)
+        if registry is not None:
+            try:
+                await registry.async_save()
+            except Exception:
+                _LOGGER.exception("Failed to save PWM restart state at shutdown")
 
     # Listen for HA stop event
     shutdown_unsub = hass.bus.async_listen_once("homeassistant_stop", _async_save_state_on_shutdown)
@@ -1078,6 +1084,10 @@ async def async_unload(hass: HomeAssistant) -> bool:
     _LOGGER.info("Unloading Adaptive Climate integration")
     pwm_registry = hass.data[DOMAIN].get(CONF_PWM_COORDINATION)
     if pwm_registry is not None:
+        try:
+            await pwm_registry.async_save()
+        except Exception:
+            _LOGGER.exception("Failed to save PWM restart state on unload")
         pwm_registry.close()
 
     # Cancel all scheduled tasks

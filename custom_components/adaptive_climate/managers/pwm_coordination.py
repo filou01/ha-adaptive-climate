@@ -9,6 +9,7 @@ from typing import Any, TYPE_CHECKING
 
 from homeassistant.components.climate import HVACMode
 from homeassistant.core import callback, split_entity_id
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 
 from .heater_actuation import ActuationResult
@@ -17,6 +18,7 @@ from .pwm_pulse import Pulse, prepare_pulse
 
 if TYPE_CHECKING:
     from ..climate import AdaptiveThermostat
+    from ..adaptive.persistence import LearningDataStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +32,21 @@ class HAZoneAdapter:
         self.period = float(entity._pwm)
         self.outputs = tuple(entity._heater_controller.get_entities(HVACMode.HEAT))
         self.blocked = False
+        self.restart_force_off = False
+
+    def ready(self) -> bool:
+        entity = self.entity
+        return entity.hvac_mode == HVACMode.OFF or bool(
+            entity._active
+            and entity._current_temp is not None
+            and entity._target_temp is not None
+            and entity._control_output is not None
+        )
+
+    def checkpoint_state(self, now: float, wall: float) -> dict[str, Any]:
+        from .pwm_restart import controller_state
+
+        return controller_state(self, now, wall)
 
     def eligible(self) -> bool:
         entity = self.entity
@@ -81,6 +98,8 @@ class HAZoneAdapter:
         return prepare_pulse(heater, self.output(), now)
 
     def minimum_remaining(self, on: bool, now: float) -> float:
+        if not on and self.restart_force_off:
+            return 0.0
         heater = self.entity._heater_controller
         minimum = heater._min_closed_time if on else heater.effective_min_open_time
         return max(0.0, minimum - (now - self.entity._get_cycle_start_time()))
@@ -101,12 +120,16 @@ class HAZoneAdapter:
         if on and (not self.eligible() or not self.available()):
             return ActuationResult.UNAVAILABLE
         method = heater.async_turn_on if on else heater.async_turn_off
+        extra = {"force": True} if not on and self.restart_force_off else {}
         result = await method(
             hvac_mode=HVACMode.HEAT,
             get_cycle_start_time=entity._get_cycle_start_time,
             set_is_heating=entity._set_is_heating,
             set_last_heat_cycle_time=entity._set_last_heat_cycle_time,
+            **extra,
         )
+        if not on and result in (ActuationResult.CHANGED, ActuationResult.UNCHANGED):
+            self.restart_force_off = False
         if result == ActuationResult.CHANGED:
             entity._set_time_changed(time.monotonic())
         entity.async_write_ha_state()
@@ -125,6 +148,8 @@ class PWMCoordinationRegistry:
     def __init__(self, hass: Any, config: dict[str, Any]) -> None:
         self.hass = hass
         self.groups: list[PWMLoadBalancingManager] = []
+        self._store: LearningDataStore | None = None
+        self._journals: dict[str, Any] = {}
         self._by_entity: dict[str, PWMLoadBalancingManager] = {}
         self._adapters: dict[str, HAZoneAdapter] = {}
         self._listeners: dict[str, Any] = {}
@@ -142,6 +167,68 @@ class PWMCoordinationRegistry:
             self.groups.append(manager)
             for zone in manager.members:
                 self._by_entity[zone] = manager
+
+    async def async_initialize(self, store: LearningDataStore) -> None:
+        """Called under the shared setup lock, before any entity binds."""
+        from .pwm_restart import restore
+
+        self._store = store
+        data = store.load_pwm_coordination()
+        if not isinstance(data, dict):
+            for group in self.groups:
+                group.fail("restart_state_invalid", release=False)
+            return
+        self._journals = data
+        for group in self.groups:
+
+            async def save(manager: PWMLoadBalancingManager = group) -> None:
+                from .pwm_restart import snapshot
+
+                if manager.mode != "active":
+                    return
+                state = snapshot(manager, time.monotonic(), dt_util.utcnow().timestamp())
+                previous = self._journals.get(manager.name, {})
+                for entity_id, row in previous.get("zones", {}).items():
+                    if entity_id not in state["zones"]:
+                        state["zones"][entity_id] = row
+                await store.async_save_pwm_coordination(manager.name, state)
+                self._journals[manager.name] = state
+
+            def ready(manager: PWMLoadBalancingManager = group) -> None:
+                saved = self._journals.get(manager.name)
+                if saved is not None:
+                    try:
+                        from .pwm_restart import number
+
+                        period = number(saved["period"])
+                        if period <= 0 or any(z.adapter.period != period for z in manager._zones.values()):
+                            raise ValueError("PWM restart period changed")
+                        manager._period = period
+                        restore(manager, saved, time.monotonic(), dt_util.utcnow().timestamp())
+                    except (KeyError, TypeError, ValueError, OverflowError):
+                        _LOGGER.exception("Invalid PWM restart state for %s", manager.name)
+                        manager.fail("restart_state_invalid", release=False)
+
+            async def stop(manager: PWMLoadBalancingManager = group) -> None:
+                await self._stop_failed_group(manager)
+
+            group.on_checkpoint_failure = stop
+            group.checkpoint = save
+            group.on_register = ready
+
+    async def _stop_failed_group(self, group: PWMLoadBalancingManager) -> None:
+        for entity_id in group.members:
+            adapter = self._adapters.get(entity_id)
+            if adapter is not None and adapter.active():
+                adapter.restart_force_off = True
+                await adapter.command(False)
+
+    async def async_save(self) -> None:
+        """Flush observed balances before orderly shutdown/unload."""
+        for group in self.groups:
+            if group.mode == "active":
+                async with group._lock:
+                    await group.save_checkpoint()
 
     def _schedule_later(self, delay: float, action: Callable[[], None]) -> Callable[[], None]:
         """Keep timer work and scheduler state on the HA event loop."""
@@ -180,7 +267,19 @@ class PWMCoordinationRegistry:
         if heater.effective_min_open_time + heater._min_closed_time > adapter.period:
             group.fail("effective minimum ON plus OFF exceeds PWM period")
             return
-        if adapter.active() and not entity._get_cycle_start_time():
+        saved = self._journals.get(group.name)
+        if saved is not None:
+            from .pwm_restart import restore_controller
+
+            try:
+                restore_controller(
+                    adapter, saved["zones"][entity.entity_id], time.monotonic(), dt_util.utcnow().timestamp()
+                )
+            except (KeyError, TypeError, ValueError, OverflowError):
+                _LOGGER.exception("Invalid PWM controller restart state for %s", entity.entity_id)
+                group.fail("restart_state_invalid", release=False)
+                return
+        if adapter.active() and saved is None and not entity._get_cycle_start_time():
             group.fail("startup output ON with unknown elapsed time; restart group with outputs OFF")
             return
         entity._heater_controller.enable_safe_actuation()
@@ -242,10 +341,14 @@ class PWMCoordinationRegistry:
             adapter.blocked = False
         if group is None:
             return False
+        if group.reason in ("restart_state_invalid", "restart_storage_error"):
+            # Do not bypass a failed durable reservation through the legacy path.
+            await self._stop_failed_group(group)
+            return True
         result = await group.update(entity_id)
         # A failed invocation is still consumed here. release() schedules the
         # next legacy transaction; never retry ON through two paths in one call.
-        return result or owned_at_entry
+        return result or owned_at_entry or group.reason in ("restart_state_invalid", "restart_storage_error")
 
     def owns(self, entity_id: str) -> bool:
         group = self._by_entity.get(entity_id)

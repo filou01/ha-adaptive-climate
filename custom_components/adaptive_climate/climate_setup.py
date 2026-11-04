@@ -299,6 +299,12 @@ async def async_setup_platform(hass: HomeAssistant, config: ConfigType, async_ad
             if coordinator is not None:
                 await async_restore_water_temp_state(learning_store, coordinator.water_temp_controller)
 
+            from .managers.pwm_coordination import PWMCoordinationRegistry
+
+            registry = hass.data[DOMAIN].get("pwm_coordination")
+            if isinstance(registry, PWMCoordinationRegistry):
+                await registry.async_initialize(learning_store)
+
             # Publish only after all shared restoration has completed successfully.
             hass.data[DOMAIN]["learning_store"] = learning_store
             _LOGGER.info("Created LearningDataStore singleton")
