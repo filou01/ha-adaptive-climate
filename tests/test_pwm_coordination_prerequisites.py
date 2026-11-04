@@ -1,8 +1,7 @@
 """Safety gates for adding a second, scheduled entry into HeaterController.
 
-These are NOT scheduler acceptance tests. Strict expected failures document
-unresolved upstream contracts; use --runxfail to reproduce the red assertions.
-The runtime scheduler must remain unavailable until these gates are resolved.
+The formerly failing cases now test the opt-in serialized actuation path.
+Unconfigured controllers retain their existing independent PWM implementation.
 """
 
 import asyncio
@@ -12,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.adaptive_climate.managers import heater_controller as heater_module
+from custom_components.adaptive_climate.managers import heater_actuation as actuation_module
 from custom_components.adaptive_climate.managers import pwm_controller as pwm_module
 from custom_components.adaptive_climate.managers.events import CycleEventType
 
@@ -25,10 +25,12 @@ def actuator(monkeypatch):
     clock = SimpleNamespace(now=10000.0)
     monotonic = SimpleNamespace(monotonic=lambda: clock.now)
     monkeypatch.setattr(heater_module, "time", monotonic)
+    monkeypatch.setattr(actuation_module, "time", monotonic)
     monkeypatch.setattr(pwm_module, "time", monotonic)
     state = {"switch.zone": "off"}
     hass = MagicMock()
     hass.states.is_state.side_effect = lambda entity, expected: state.get(entity) == expected
+    hass.states.get.side_effect = lambda entity: SimpleNamespace(state=state[entity]) if entity in state else None
     thermostat = SimpleNamespace(
         entity_id="climate.zone", _current_temp=19.0, target_temperature=22.0, _target_temp=22.0
     )
@@ -46,6 +48,7 @@ def actuator(monkeypatch):
         min_closed_time=600.0,
         dispatcher=dispatcher,
     )
+    controller.enable_safe_actuation()
     tracking = SimpleNamespace(changed=0.0, heating=False)
     callbacks = {
         "hvac_mode": "heat",
@@ -54,7 +57,7 @@ def actuator(monkeypatch):
         "set_last_heat_cycle_time": lambda at: setattr(tracking, "changed", at),
     }
 
-    async def successful_service(domain, service, data):
+    async def successful_service(domain, service, data, **kwargs):
         state[data["entity_id"]] = "on" if service == "turn_on" else "off"
 
     hass.services.async_call = AsyncMock(side_effect=successful_service)
@@ -99,9 +102,6 @@ async def test_successful_start_tracks_observed_output(actuator):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="Controller emits learning/pipeline start before service success"
-)
 async def test_failed_start_does_not_commit_delivery_or_learning(actuator):
     actuator.hass.services.async_call.side_effect = RuntimeError("relay unavailable")
     actuator.controller._has_demand = True
@@ -114,7 +114,6 @@ async def test_failed_start_does_not_commit_delivery_or_learning(actuator):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="PWM spends accumulated credit after a min-OFF rejection")
 async def test_min_off_rejection_retains_accumulated_credit(actuator):
     actuator.tracking.changed = actuator.clock.now - 420.0  # 180s of min-OFF left
     await accumulated_pulse(actuator)
@@ -124,9 +123,6 @@ async def test_min_off_rejection_retains_accumulated_credit(actuator):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="PWM spends accumulated credit after a failed service call"
-)
 async def test_failed_accumulated_pulse_retains_credit(actuator):
     actuator.hass.services.async_call.side_effect = RuntimeError("relay unavailable")
     await accumulated_pulse(actuator)
@@ -136,15 +132,12 @@ async def test_failed_accumulated_pulse_retains_credit(actuator):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="Forced OFF sees relay still OFF while a prior ON is in flight"
-)
 async def test_force_off_wins_over_inflight_start(actuator):
     """Model separate scheduler and mode entry points with a suspended service."""
     entered = asyncio.Event()
     release = asyncio.Event()
 
-    async def delayed_service(domain, service, data):
+    async def delayed_service(domain, service, data, **kwargs):
         if service == "turn_on":
             entered.set()
             await release.wait()
@@ -155,17 +148,16 @@ async def test_force_off_wins_over_inflight_start(actuator):
     try:
         await asyncio.wait_for(entered.wait(), timeout=1.0)
         actuator.controller._has_demand = False
-        await actuator.controller.async_turn_off(**actuator.callbacks, force=True)
+        stopping = asyncio.create_task(actuator.controller.async_turn_off(**actuator.callbacks, force=True))
+        await asyncio.sleep(0)
     finally:
         release.set()
         await pending
+        await stopping
     assert actuator.state["switch.zone"] == "off"
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="Controller emits HEATING_ENDED before failed OFF service"
-)
 async def test_failed_stop_does_not_commit_learning_end(actuator):
     actuator.controller._has_demand = True
     await actuator.controller.async_turn_on(**actuator.callbacks)
@@ -177,3 +169,43 @@ async def test_failed_stop_does_not_commit_learning_end(actuator):
     assert actuator.controller.heater_control_failed
     assert CycleEventType.HEATING_ENDED not in emitted_types(actuator)
     assert actuator.tracking.heating
+
+
+@pytest.mark.asyncio
+async def test_command_acceptance_waits_for_observed_state(actuator, monkeypatch):
+    from homeassistant.helpers import event
+
+    listeners = []
+    monkeypatch.setattr(
+        event,
+        "async_track_state_change_event",
+        lambda hass, entities, callback: listeners.append(callback) or (lambda: None),
+    )
+
+    async def accepted_without_feedback(*args, **kwargs):
+        pass
+
+    actuator.hass.services.async_call.side_effect = accepted_without_feedback
+    actuator.controller._has_demand = True
+    pending = asyncio.create_task(actuator.controller.async_turn_on(**actuator.callbacks))
+    await asyncio.sleep(0)
+    assert not actuator.dispatcher.emit.called
+    assert not pending.done()
+    actuator.state["switch.zone"] = "on"
+    listeners[0](None)
+    await pending
+    assert emitted_types(actuator).count(CycleEventType.HEATING_STARTED) == 1
+
+
+@pytest.mark.asyncio
+async def test_force_off_revokes_waiting_state_confirmation(actuator):
+    async def accepted_without_feedback(*args, **kwargs):
+        pass
+
+    actuator.hass.services.async_call.side_effect = accepted_without_feedback
+    pending = asyncio.create_task(actuator.controller.async_turn_on(**actuator.callbacks))
+    await asyncio.sleep(0)
+    stopping = asyncio.create_task(actuator.controller.async_turn_off(**actuator.callbacks, force=True))
+    await asyncio.wait_for(asyncio.gather(pending, stopping), timeout=1)
+    assert actuator.state["switch.zone"] == "off"
+    assert not actuator.dispatcher.emit.called

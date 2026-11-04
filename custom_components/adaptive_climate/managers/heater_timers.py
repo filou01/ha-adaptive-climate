@@ -67,6 +67,18 @@ class HeaterTimerManager:
         self._valve_close_timer: Any | None = None
         self._demand_zero_timer: Any | None = None
         self._low_output_timer: Any | None = None
+        self._versions: dict[str, int] = {}
+
+    def _guard(self, name: str, action):
+        """A cancelled callback that has already been queued must be harmless."""
+        version = self._versions.get(name, 0) + 1
+        self._versions[name] = version
+
+        def guarded(value):
+            if self._versions.get(name) == version:
+                action(value)
+
+        return guarded
 
     # ── State queries ──────────────────────────────────────────────────────────
 
@@ -84,6 +96,8 @@ class HeaterTimerManager:
 
     def cancel_all(self) -> None:
         """Cancel every pending timer. Call on entity removal or forced shutdown."""
+        for name in self._versions:
+            self._versions[name] += 1
         if self._demand_zero_timer is not None:
             self._demand_zero_timer()
             self._demand_zero_timer = None
@@ -101,6 +115,7 @@ class HeaterTimerManager:
 
     def cancel_valve_open(self) -> None:
         """Cancel the pending valve-open delay timer, if any."""
+        self._versions["open"] = self._versions.get("open", 0) + 1
         if self._valve_open_timer is not None:
             self._valve_open_timer()
             self._valve_open_timer = None
@@ -114,7 +129,7 @@ class HeaterTimerManager:
         self._valve_open_timer = async_call_later(
             self._hass,
             self._valve_actuation_time,
-            lambda _: self._on_heating_started(hvac_mode),
+            self._guard("open", lambda _: self._on_heating_started(hvac_mode)),
         )
 
     @callback
@@ -136,7 +151,7 @@ class HeaterTimerManager:
         self._valve_close_timer = async_call_later(
             self._hass,
             half_valve_time,
-            lambda _, c=committed_heat_seconds: self._on_heating_ended(hvac_mode, c),
+            self._guard("close", lambda _, c=committed_heat_seconds: self._on_heating_ended(hvac_mode, c)),
         )
 
     @callback
@@ -164,11 +179,12 @@ class HeaterTimerManager:
         self._demand_zero_timer = async_call_later(
             self._hass,
             float(2 * self._pwm),
-            lambda _: self._on_demand_zero(hvac_mode, was_clamped),
+            self._guard("demand", lambda _: self._on_demand_zero(hvac_mode, was_clamped)),
         )
 
     def cancel_demand_zero(self) -> None:
         """Cancel the demand→0 debounce timer (demand returned before it fired)."""
+        self._versions["demand"] = self._versions.get("demand", 0) + 1
         if self._demand_zero_timer is not None:
             self._demand_zero_timer()
             self._demand_zero_timer = None
@@ -203,11 +219,12 @@ class HeaterTimerManager:
         self._low_output_timer = async_call_later(
             self._hass,
             float(2 * self._pwm),
-            lambda _: self._on_low_output(hvac_mode, was_clamped),
+            self._guard("low", lambda _: self._on_low_output(hvac_mode, was_clamped)),
         )
 
     def cancel_low_output(self) -> None:
         """Cancel the low-output maintenance timer (output rose above threshold)."""
+        self._versions["low"] = self._versions.get("low", 0) + 1
         if self._low_output_timer is not None:
             self._low_output_timer()
             self._low_output_timer = None
