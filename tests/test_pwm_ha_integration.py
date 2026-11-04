@@ -15,7 +15,7 @@ from custom_components.adaptive_climate.pwm_coordination_config import PWM_COORD
 
 
 class Entity(ClimateStateSettersMixin):
-    def __init__(self, entity_id, hass):
+    def __init__(self, entity_id, hass, output_domain="switch"):
         self.entity_id = entity_id
         self.hass = hass
         self._pwm = 3600
@@ -41,7 +41,7 @@ class Entity(ClimateStateSettersMixin):
         self._heater_controller = HeaterController(
             hass,
             self,
-            [entity_id.replace("climate.", "switch.")],
+            [entity_id.replace("climate.", f"{output_domain}.")],
             None,
             None,
             False,
@@ -77,8 +77,9 @@ class Entity(ClimateStateSettersMixin):
         )
 
 
-@pytest.fixture
-def live(monkeypatch):
+@pytest.fixture(params=["switch", "input_boolean"])
+def live(monkeypatch, request):
+    domain = request.param
     clock = SimpleNamespace(now=10000.0)
     clock.monotonic = lambda: clock.now
     for module in (heater_actuation, pwm_controller, pwm_coordination):
@@ -86,7 +87,7 @@ def live(monkeypatch):
     monkeypatch.setattr(pwm_coordination, "HVACMode", SimpleNamespace(HEAT="heat", OFF="off"))
     monkeypatch.setattr(heater_module, "HVACMode", SimpleNamespace(HEAT="heat", COOL="cool", OFF="off"))
     monkeypatch.setattr(pwm_coordination, "split_entity_id", lambda value: value.split(".", 1))
-    state = {"switch.a": "off", "switch.b": "off"}
+    state = {f"{domain}.a": "off", f"{domain}.b": "off"}
     hass = MagicMock()
     hass.async_create_task.side_effect = lambda coroutine: coroutine.close()
     hass.states.get.side_effect = lambda entity: SimpleNamespace(state=state[entity]) if entity in state else None
@@ -107,11 +108,13 @@ def live(monkeypatch):
         }
     )
     registry = pwm_coordination.PWMCoordinationRegistry(hass, config)
-    entities = [Entity("climate.a", hass), Entity("climate.b", hass)]
+    entities = [Entity("climate.a", hass, domain), Entity("climate.b", hass, domain)]
     for entity in entities:
         entity._pwm_coordination = registry
         registry.bind(entity)
-    return SimpleNamespace(clock=clock, state=state, registry=registry, entities=entities, commands=commands)
+    return SimpleNamespace(
+        clock=clock, state=state, registry=registry, entities=entities, commands=commands, domain=domain, config=config
+    )
 
 
 @pytest.mark.asyncio
@@ -119,7 +122,7 @@ async def test_real_dispatch_uses_one_writer_and_common_setpoint_setter(live):
     entity = live.entities[0]
     await entity.apply()
     assert live.registry.groups[0].mode == "active"
-    assert live.state["switch.a"] == "on"
+    assert live.state[f"{live.domain}.a"] == "on"
     count = len(live.commands)
     live.clock.now += 300
     entity._set_target_temp(23.0)  # shared by UI, preset, automation and schedule paths
@@ -155,7 +158,7 @@ def test_low_duty_is_not_fabricated_and_credit_is_reserved(live):
 
 @pytest.mark.asyncio
 async def test_unavailable_relay_never_runs_speculative_on(live):
-    live.state["switch.a"] = "unavailable"
+    live.state[f"{live.domain}.a"] = "unavailable"
     await live.entities[0].apply()
     assert live.registry.groups[0].mode == "fallback"
     assert not live.commands
@@ -169,7 +172,7 @@ async def test_target_reduction_zero_cancels_future_on(live):
     entity._set_target_temp(18)
     entity._control_output = 0
     await entity.apply()
-    assert live.state["switch.a"] == "off"
+    assert live.state[f"{live.domain}.a"] == "off"
     assert live.registry.groups[0]._zones[entity.entity_id].credit == 0
 
 
@@ -181,7 +184,7 @@ def test_shutdown_does_not_schedule_legacy_control(live):
 
 def test_shared_output_disables_group(live):
     extra = Entity("climate.extra", live.entities[0].hass)
-    extra._heater_controller._heater_entity_id = ["switch.a"]
+    extra._heater_controller._heater_entity_id = [f"{live.domain}.a"]
     live.registry.bind(extra)
     assert live.registry.groups[0].mode == "fallback"
 
@@ -202,7 +205,7 @@ async def test_stale_temperature_rechecks_original_safety_output(live):
     entity._last_sensor_update = live.clock.now - 120
     entity._output_safety = 0
     await entity.apply()
-    assert not any(command[2] == "switch.a" for command in live.commands)
+    assert not any(command[2] == f"{live.domain}.a" for command in live.commands)
 
 
 def test_effective_schedule_target_is_used_in_priority_signature(live):
@@ -226,3 +229,44 @@ async def test_fallback_does_not_repeat_failed_start_in_same_control_transaction
     await live.entities[0].apply()
     assert live.registry.groups[0].mode == "fallback"
     assert attempted == ["turn_on", "turn_off"]
+
+
+@pytest.mark.asyncio
+async def test_mixed_binary_domains_use_existing_controller_service(live):
+    """Switches and boolean proxies may share a group; no direct device writes."""
+    entity = live.entities[1]
+    other_domain = "input_boolean" if live.domain == "switch" else "switch"
+    output = f"{other_domain}.b"
+    live.state[output] = "off"
+    entity._heater_controller._heater_entity_id = [output]
+    live.registry.close()
+    live.registry = pwm_coordination.PWMCoordinationRegistry(entity.hass, live.config)
+    for member in live.entities:
+        member._pwm_coordination = live.registry
+        live.registry.bind(member)
+    calls = []
+
+    async def service(domain, name, data, **kwargs):
+        calls.append((domain, name, data["entity_id"]))
+        live.state[data["entity_id"]] = "on" if name == "turn_on" else "off"
+
+    entity.hass.services.async_call = service
+    entity._set_target_temp(23)
+    await entity.apply()
+    assert live.registry.groups[0].mode == "active"
+    assert live.state[output] == "on"
+    assert ("homeassistant", "turn_on", output) in calls
+    live.clock.now += 800
+    entity._control_output = 0
+    await entity.apply()
+    assert live.state[output] == "off"
+    assert ("homeassistant", "turn_off", output) in calls
+
+
+@pytest.mark.parametrize("domain", ["input_number", "light"])
+def test_nonbinary_output_domains_remain_unsupported(live, domain):
+    entity = live.entities[0]
+    entity._heater_controller._heater_entity_id = [f"{domain}.a"]
+    live.registry.bind(entity)
+    assert live.registry.groups[0].mode == "fallback"
+    assert "switch or input_boolean" in live.registry.groups[0].reason

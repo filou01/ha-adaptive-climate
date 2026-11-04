@@ -161,9 +161,11 @@ class PWMCoordinationRegistry:
             or entity._cooler_entity_id
             or entity._ac_mode
             or entity._heater_polarity_invert
-            or any(split_entity_id(output)[0] != "switch" for output in adapter.outputs)
+            or any(split_entity_id(output)[0] not in {"switch", "input_boolean"} for output in adapter.outputs)
         ):
-            group.fail("unsupported zone: HEAT-only PWM with one non-inverted switch per zone required")
+            group.fail(
+                "unsupported zone: HEAT-only PWM with one non-inverted switch or input_boolean per zone required"
+            )
             return
         heater = entity._heater_controller
         if heater.effective_min_open_time + heater._min_closed_time > adapter.period:
