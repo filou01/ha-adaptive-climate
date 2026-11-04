@@ -1,7 +1,9 @@
 # Pump-aware PWM coordination (preview)
 
 This fork implements optional phase coordination for heating zones whose single
-binary switch outputs energize a shared pump through an existing electrical OR.
+binary outputs energize a shared pump through an existing electrical OR.
+Supported outputs are `switch.*` and, since preview 4, `input_boolean.*` relay
+proxies (for example, an NSPanel/ESPHome relay following a HA helper).
 The feature is disabled by default. It controls zone timing, not the pump relay,
 water flow or heat-pump speed. Keep the integration domain `adaptive_climate`.
 
@@ -106,7 +108,7 @@ estimate, not proof of valve position or physical heat.
 | Installation | Behavior |
 | --- | --- |
 | Feature absent or disabled | Existing independent path. |
-| Same-period, HEAT-only PWM, one non-inverted `switch.*` per zone | Supported preview configuration. |
+| Same-period, HEAT-only PWM, one non-inverted `switch.*` or `input_boolean.*` per zone | Supported preview configuration. |
 | HVAC OFF or paused zone | Never used to fill a gap; stale ON reservations are invalidated. |
 | Direct 100% demand | Immediate eligible ON, continuous while demand remains full. |
 | Cooling, AC, HEAT_COOL, analog valve (`pwm: 0`) | Not coordinated; independent fallback. |
@@ -120,6 +122,28 @@ Fallback is latched for the group until restart. Do not repeatedly toggle
 settings to hide a recurrent fault; inspect the exposed reason. The coordinator adds no persistent storage or PID gain reset. Preview 2 adds
 an independent learner payload v12 migration; see [learning hotfixes](learning-hotfixes.md).
 No obsolete `loops` key or pump-flow-control dependency is introduced. Unconfigured zones are not scheduled.
+
+## Using an input_boolean relay proxy
+
+Keep your existing `heater: input_boolean.wohnzimmer_fbh_heizanforderung`
+configuration. A group may contain both switch and input_boolean outputs.
+The same `HeaterController` service path, minimum times, priority response,
+confirmed HA ON/OFF state and fallback rules apply. Analog outputs, inverted
+outputs and multiple outputs per zone remain unsupported for coordination.
+
+With NSPanel-Easy/ESPHome following the helper, HA confirms the **helper state**.
+It does not confirm delivery to the panel, its relay position or pump state.
+The delivery ledger, valve timing, learning events and pump/overlap estimates
+therefore use the helper's ON/OFF transitions as a proxy. Delays, device outages,
+manual overrides or extra logic downstream are not detected unless reflected
+in the helper state. An available helper does not prove an available panel.
+Use this topology only when the downstream relay follows the helper consistently;
+no physical relay feedback is inferred by accepting its entity domain.
+
+After upgrading, restart HA because the previous unsupported-output fallback is
+latched. Begin the monitored restart with participating thermostats and helpers
+OFF, as described below; startup ON with unknown elapsed time still falls back.
+See [preview 4 verification](input-boolean-pwm.md) for the actual checks run.
 
 ## Installing the preview from the fork
 
