@@ -79,6 +79,13 @@ See [reproduction, changed files, compatibility and evidence](../pwm-ordinary-st
 
 ## Validation
 
+Preview 8 repairs executable minimal handovers using signed remaining budgets,
+minimum switching bounds and advisory next-period opportunities. Active and
+priority starts remain fixed; ordinary allowances and actual delivery are
+unchanged. See [the current regression/deployment test plan and exact-source
+evidence](../pwm-runtime-handovers.md). The figures below are historical preview 7
+evidence and are not a substitute for preview 8 validation.
+
 - Linux Python 3.11.18: **3682 passed, 11 skipped**, full suite, exit 0.
 - Linux Python 3.12.3: **3682 passed, 11 skipped**, full suite, exit 0.
 - New ordinary-entitlement regressions: **54 passed**, including two 24h PID-noise replays.

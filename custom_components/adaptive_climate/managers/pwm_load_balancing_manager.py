@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from .heater_actuation import ActuationResult
 from .pwm_load_balancing_optimizer import Schedule, ZoneRequest, plan
 from .pwm_pulse import Pulse
+from .pwm_runtime_planner import RuntimeWindow, measure_windows, repair_windows
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class ZoneAdapter(Protocol):
     def signature(self) -> tuple[object, ...]: ...
     def prepare(self, now: float) -> Pulse: ...
     def minimum_remaining(self, on: bool, now: float) -> float: ...
+    def minimum_on_seconds(self) -> float: ...
     def invalidate(self) -> None: ...
     def commit_credit(self, seconds: float) -> None: ...
     async def command(self, on: bool) -> ActuationResult: ...
@@ -133,6 +135,9 @@ class PWMLoadBalancingManager:
         self._observed_group: set[str] = set()
         self.weighted_overlap_seconds = 0.0
         self.high_weight_overlap_seconds = 0.0
+        self._runtime_starts: dict[str, float] = {}
+        self._runtime_reasons: dict[str, str] = {}
+        self._runtime_projected_starts = 0
 
     def register(self, adapter: ZoneAdapter) -> None:
         """Bind after actual entity ID, restoration and controller readiness."""
@@ -394,6 +399,76 @@ class PWMLoadBalancingManager:
             except Exception as err:
                 raise PWMCheckpointError from err
 
+    def _plan_executable(self, now: float, cycle_start: float) -> None:
+        """Repair timing only; all accounting and command eligibility stay authoritative."""
+        if self.schedule is None or self._origin is None:
+            return
+        windows: list[RuntimeWindow] = []
+        reasons: dict[str, str] = {}
+        boundary = cycle_start + self._period
+        horizon = boundary + self._period
+        for entity, zone in self._zones.items():
+            adapter = zone.adapter
+            eligible = adapter.eligible()
+            if adapter.active():
+                remaining = max(0.0, zone.credit) if eligible else 0.0
+                duration = max(remaining, adapter.minimum_remaining(False, now))
+                if zone.pulse.continuous and eligible:
+                    duration = horizon - now
+                # Even an expiring output is still ON for this transaction:
+                # successors can be commanded before its OFF, without adding
+                # heater time. The epsilon is only a planning boundary marker.
+                windows.append(RuntimeWindow(entity, zone.weight, now, max(0.001, duration), now, now))
+                reasons[entity] = "already_on"
+            elif eligible and zone.credit > 0:
+                earliest = now + adapter.minimum_remaining(True, now)
+                deadline = (zone.owed_since if zone.owed_since is not None else now) + self.max_deferral
+                ordinary = not zone.priority and not zone.pulse.continuous
+                slot = cycle_start + self.schedule.phases[entity]
+                due = max(earliest, min(max(now, slot), deadline)) if ordinary else earliest
+                # Repair within this allocation's current epoch. Do not cross
+                # into a fresh budget/allowance merely to make a nicer chain.
+                budget_end = min(boundary, zone.next_budget_at) if zone.next_budget_at is not None else boundary
+                latest = max(earliest, min(deadline, budget_end - 0.001)) if ordinary else earliest
+                due = min(due, latest)
+                duration = max(zone.credit, adapter.minimum_on_seconds())
+                if zone.pulse.continuous:
+                    duration = max(duration, horizon - due)
+                windows.append(RuntimeWindow(entity, zone.weight, due, duration, earliest, latest, ordinary))
+                reasons[entity] = "ordinary_slot" if ordinary else "priority_or_continuous"
+            else:
+                reasons[entity] = "no_reserved_demand" if not eligible else "start_quota_or_balance"
+                # A closed neighbor's next phase is advisory only. It cannot
+                # spend credit, earn an allowance, or dispatch a future ON.
+                future = zone.next_budget_at
+                duration = zone.allocation + min(0.0, zone.credit)
+                if eligible and future is not None and now < future < horizon and duration > 0:
+                    future = max(
+                        future,
+                        self._origin + (zone.last_start_epoch + 1) * self._period,
+                        now + adapter.minimum_remaining(True, now),
+                    )
+                    if future < horizon:
+                        duration = max(duration, adapter.minimum_on_seconds())
+                        windows.append(
+                            RuntimeWindow(entity, zone.weight, future, duration, future, future, forecast=True)
+                        )
+        highest = min(self.members, key=lambda entity: (-self.members[entity], entity))
+        repaired = (
+            repair_windows(windows, highest, self.overlap, self._runtime_starts)
+            if self.strategy == "minimal"
+            else windows
+        )
+        original = {w.entity_id: w.start for w in windows}
+        for window in repaired:
+            if window.movable and abs(window.start - original[window.entity_id]) > 0.001:
+                reasons[window.entity_id] = (
+                    "handover_wait" if window.start > original[window.entity_id] else "handover_advance"
+                )
+        self._runtime_starts = {w.entity_id: w.start for w in repaired if not w.forecast}
+        self._runtime_reasons = reasons
+        self._runtime_projected_starts = measure_windows(repaired, highest, self.overlap)[0]
+
     async def _reconcile(self, reason: str) -> None:
         now = self._now()
         if any(not z.adapter.available() for z in self._zones.values()):
@@ -440,6 +515,7 @@ class PWMLoadBalancingManager:
                 zone.next_budget_at = cycle_start + self.schedule.phases[entity] + self._period
             if zone.next_budget_at is not None and zone.next_budget_at > now:
                 next_times.append(zone.next_budget_at)
+        self._plan_executable(now, cycle_start)
         # Start genuine successors before ending predecessors at the same event.
         for on in (True, False):
             for entity, zone in self._zones.items():
@@ -461,6 +537,7 @@ class PWMLoadBalancingManager:
                         zone.priority_blocked_count += 1
                         zone.priority_blocked_reason = "minimum_off"
                     due = max(due, now + minimum)
+                    due = max(now + minimum, self._runtime_starts.get(entity, due))
                 else:
                     if not active or (zone.pulse.continuous and eligible):
                         continue
@@ -556,4 +633,9 @@ class PWMLoadBalancingManager:
             "max_ordinary_deferral_seconds": zone.max_deferral if zone else 0,
             "next_transition_in_seconds": max(0.0, self._next_at - self._now()) if self._next_at is not None else None,
             "projected_high_weight_overlap_seconds": self.schedule.high_weight_overlap_seconds if self.schedule else 0,
+            "runtime_projected_starts": self._runtime_projected_starts,
+            "runtime_start_in_seconds": max(0.0, self._runtime_starts[entity_id] - self._now())
+            if entity_id in self._runtime_starts and zone is not None and not zone.adapter.active()
+            else None,
+            "runtime_plan_reason": self._runtime_reasons.get(entity_id),
         }

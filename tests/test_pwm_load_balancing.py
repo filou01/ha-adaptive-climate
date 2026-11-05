@@ -62,6 +62,9 @@ class SimZone:
     def minimum_remaining(self, on, now):
         return max(0.0, (self.min_off if on else self.min_on) - (now - self.last_change))
 
+    def minimum_on_seconds(self):
+        return self.min_on
+
     def invalidate(self):
         pass
 

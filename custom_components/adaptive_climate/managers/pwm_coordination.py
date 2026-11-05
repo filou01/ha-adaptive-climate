@@ -107,6 +107,9 @@ class HAZoneAdapter:
         minimum = heater._min_closed_time if on else heater.effective_min_open_time
         return max(0.0, minimum - (now - self.entity._get_cycle_start_time()))
 
+    def minimum_on_seconds(self) -> float:
+        return self.entity._heater_controller.effective_min_open_time
+
     def invalidate(self) -> None:
         self.entity._heater_controller._actuation.invalidate()
 

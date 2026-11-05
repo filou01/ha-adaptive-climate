@@ -73,6 +73,16 @@ Both modes preserve the hard safety/delivery rules. Neither adds heat to fill
 a pump gap. Handover overlap is electrical overlap; it proves no hydraulic flow.
 Changes to group configuration or strategy require a Home Assistant restart.
 
+Preview 8 additionally repairs executable `minimal` handovers from actual
+remaining budgets, committed ON intervals, minimum-time bounds and advisory
+next-period opportunities. Ordinary pulses can wait within their existing
+deadline to avoid an otherwise unnecessary restart. Priority and direct-100%
+starts remain immediate subject to the existing minimum protection. See the
+[root cause, automated/deployment test plans and limits](pwm-runtime-handovers.md).
+The cyclic projections describe an ideal steady-state plan; new `runtime_*`
+diagnostics describe the remaining absolute plan, including forecasts. Neither
+guarantees continuity when genuine demand changes or a device fails.
+
 ## Ordinary pulses
 
 Preview 7 permits at most one ordinary OFF-to-ON transition per zone and stable

@@ -198,6 +198,8 @@ async def test_blocked_ordinary_start_is_not_consumed_until_output_changes(live)
 @pytest.mark.asyncio
 async def test_delayed_ordinary_edge_is_attributed_to_actual_period_not_original_budget():
     sim = Simulation((720, 720))
+    # Isolate observed epoch attribution from optional ordinary handover repair.
+    sim.manager.max_deferral = 0
     zone = sim.zones[0]
     zone.min_on = zone.min_off = 600
     sim.now = 3500
