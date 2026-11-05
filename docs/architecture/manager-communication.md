@@ -2,6 +2,24 @@
 
 ## Overview
 
+### Fork preview: PWM coordination boundary
+
+In the optional `codex/pump-aware-pwm` preview, `HAZoneAdapter` implements the
+`ZoneAdapter` protocol for the group manager. The pure cyclic and executable
+planners never call HA services. `PWMLoadBalancingManager` reserves effective
+electrical durations and sends commands through the existing `HeaterController`
+serialized actuation path. Observed output edges, not plan timestamps, pay the
+signed delivery ledger. Generation checks revoke stale callbacks and are
+rechecked after awaited storage/service work.
+
+Real effective target changes and OFF-to-HEAT are priority control transitions;
+ordinary PID updates are not. Priority cannot be deferred to optimize a pump
+handover. Durable journal state preserves budgets and allowances, while preview
+8 reconstructs transient executable plans after restart. Existing event/callback
+patterns still apply; an event notification alone is not command confirmation.
+See the [bilingual extension index](../fork-extensions.md) and
+[current handover architecture](../pwm-runtime-handovers.md#english).
+
 Adaptive Climate uses four distinct communication patterns between the thermostat entity and its managers. Each pattern serves a specific purpose and should be used in the appropriate context.
 
 ## The Four Patterns

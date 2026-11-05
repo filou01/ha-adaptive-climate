@@ -1,5 +1,9 @@
 # Pump-aware PWM coordination (preview)
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](fork-extensions.md)
+
+## English
+
 This fork implements optional phase coordination for heating zones whose single
 binary outputs energize a shared pump through an existing electrical OR.
 Supported outputs are `switch.*` and, since preview 4, `input_boolean.*` relay
@@ -11,7 +15,7 @@ water flow or heat-pump speed. Keep the integration domain `adaptive_climate`.
 [verification report](architecture/pump-aware-pwm-verification.md). This is a
 supervised-test candidate, not a claim of validation on your heating equipment.
 
-## Configuration
+### Configuration
 
 Without this block, or with `enabled: false`, existing independent control is
 used. No group scheduling timers or listeners are created when disabled.
@@ -55,7 +59,7 @@ Weights of 1 are illustrative and do not establish any room's real loop count.
 Unknown options, duplicate membership, invalid entity IDs and nonfinite numbers
 are rejected. Runtime validates actual output identity, period and readiness.
 
-## Choosing overlap
+### Choosing overlap
 
 `minimal` arranges a contiguous group run with small handovers, puts the
 highest-weight zone first and assigns unavoidable longer overlaps to small
@@ -83,7 +87,7 @@ The cyclic projections describe an ideal steady-state plan; new `runtime_*`
 diagnostics describe the remaining absolute plan, including forecasts. Neither
 guarantees continuity when genuine demand changes or a device fails.
 
-## Ordinary pulses
+### Ordinary pulses
 
 Preview 7 permits at most one ordinary OFF-to-ON transition per zone and stable
 group-origin PWM epoch. Each allocation's pulse stays contiguous. Minimum OFF
@@ -98,7 +102,7 @@ target changes under the original immediate-demand contract. Priority and direct
 and minimum protection. Continuing ON across a boundary is not interrupted.
 See [period entitlement, diagnostics, restart compatibility and tests](pwm-ordinary-starts.md).
 
-## Immediate demand and accounting
+### Immediate demand and accounting
 
 An eligible setpoint increase or OFF->HEAT transition is evaluated immediately
 and is never delayed to the next coordinated PWM slot; subsequent pulses are
@@ -128,7 +132,7 @@ cannot retract a command already sent to a device: an obsolete in-flight ON
 is reconciled OFF through the same controller. HA state is an electrical-state
 estimate, not proof of valve position or physical heat.
 
-## Compatibility and fallback
+### Compatibility and fallback
 
 | Installation | Behavior |
 | --- | --- |
@@ -149,7 +153,7 @@ settings to hide a recurrent fault; inspect the exposed reason. Preview 6 adds d
 an independent learner payload v12 migration; see [learning hotfixes](learning-hotfixes.md).
 No obsolete `loops` key or pump-flow-control dependency is introduced. Unconfigured zones are not scheduled.
 
-## Using an input_boolean relay proxy
+### Using an input_boolean relay proxy
 
 Keep your existing `heater: input_boolean.wohnzimmer_fbh_heizanforderung`
 configuration. A group may contain both switch and input_boolean outputs.
@@ -172,7 +176,7 @@ OFF, as described below. Preview 6 restores known journaled ON state; startup
 ON without a trustworthy journal still falls back.
 See [preview 4 verification](input-boolean-pwm.md) for the actual checks run.
 
-## Installing the preview from the fork
+### Installing the preview from the fork
 
 1. Back up the existing integration files, YAML configuration and adaptive
    learning storage. Record the current upstream version for rollback.
@@ -195,7 +199,7 @@ See [preview 4 verification](input-boolean-pwm.md) for the actual checks run.
 This page is not a declaration that a particular release has passed tests;
 use its verification report. No automatic change is made to your HA instance.
 
-## Diagnostics and rollback
+### Diagnostics and rollback
 
 Preview 6 preserves zone time budgets and last known output edges across
 restarts. See [restart journals, new diagnostics and limitations](pwm-restart-safety.md).
@@ -220,3 +224,158 @@ upstream release and restore its configuration. Preserve adaptive learning
 storage and its pre-upgrade backup; no manual reset is required. See
 [the hotfix rollback notes](learning-hotfixes.md#installation-and-rollback) for
 the additive learner counter migration.
+
+## Deutsch
+
+### Zweck und aktueller Stand
+
+Diese Fork-Erweiterung koordiniert die zeitliche Lage echter Heizpulse mehrerer
+Zonen an einer gemeinsamen Pumpe. Deren vorhandene elektrische ODER-Schaltung
+startet die Pumpe, sobald ein Zonenaktor bestromt wird. Die Integration schaltet
+nicht direkt die Pumpe und regelt weder Drehzahl noch Durchfluss. Die Funktion
+ist standardmäßig deaktiviert. Aktueller Stand ist `v0.67.1-pwm.8`.
+
+Unterstützt werden HEAT-only-PWM-Zonen mit gleicher positiver Periode und je
+einem nicht invertierten `switch.*`- oder `input_boolean.*`-Ausgang. Die
+Booleschen Helfer können beispielsweise von NSPanel/ESPHome auf ein Relais
+übertragen werden. Der Integrationsname bleibt `adaptive_climate`.
+
+### Konfiguration
+
+Der YAML-Block im englischen Abschnitt ist vollständig und gilt unverändert
+auch für die deutsche Anleitung. Er wird mit dem vorhandenen
+`adaptive_climate:`-Block zusammengeführt; den Schlüssel nicht doppelt anlegen.
+Die dortigen Zonen-IDs und hydraulischen Gewichte sind Beispiele und müssen
+zur eigenen Anlage passen. Das Gewicht ist eine Optimierungspräferenz und
+keine Durchflussberechnung oder automatisch erkannte Heizkreisanzahl.
+
+| Einstellung | Bedeutung und Grenzen |
+| --- | --- |
+| `enabled` | Strikter Boolean, Standard `false`; ausdrücklich aktivieren |
+| `mode` | Nur `load_balancing` unterstützt |
+| `groups[].name` | Eindeutiger nicht leerer Name; eine physische Pumpe je Gruppe |
+| `overlap_strategy` | `minimal` als Standard oder `maximal` |
+| `handover_overlap_seconds` | 0–1800 Sekunden, Standard 240; Ziel innerhalb echten Bedarfs |
+| `max_deferral_seconds` | 0–7200 Sekunden, Standard 3600; nur gewöhnliche Pulse |
+| `zones` | 2–16 echte Climate-Entity-IDs; keine Mehrfachzuordnung |
+| `hydraulic_weight` | Endlich und strikt positiv, Standard 1 |
+
+Unbekannte Optionen, doppelte Mitglieder, ungültige Entity-IDs und nicht endliche
+Zahlen werden abgewiesen. Ausgangsidentität, Periode und Bereitschaft werden
+zusätzlich zur Laufzeit geprüft. Gruppen- und Strategieänderungen benötigen
+einen HA-Neustart. Ohne Block oder mit `enabled: false` gilt die bisherige
+unabhängige Steuerung ohne Gruppentimer und Gruppenlistener.
+
+### Die richtige Überlappungsstrategie
+
+`minimal` soll zuerst vermeidbare Pumpenstarts reduzieren, danach kurze echte
+Übergaben herstellen und höher gewichtete Zonen möglichst allein betreiben.
+Unvermeidbare längere Überschneidungen werden bevorzugt auf kleine Zonen gelegt.
+Eine längere gemeinsame Pumpenlaufzeit wird dabei bewusst akzeptiert. Die
+Strategie minimiert nicht die Summe aller Pumpen-Einschaltsekunden.
+
+`maximal` bündelt gewöhnliche Pulse für eine kürzere gemeinsame Laufzeit. Das
+kann gegenüber einer bereits durchgängigen unabhängigen Last mehr Pumpenstarts
+erzeugen; auch diese Strategie garantiert keine universelle Startminimierung.
+
+Beispiel ohne Ventil-/Mindestzeitkorrekturen: Zweimal 20 Minuten echter Bedarf
+können bei `minimal` 0–20 und 16–36 Minuten laufen: 36 gemeinsame Minuten,
+vier Minuten Überschneidung. `maximal` kann beide auf 0–20 legen: 20 gemeinsame
+Minuten, 20 Minuten Überschneidung. Jede Zone erhält gleich viel ON-Zeit.
+Bei über 100 Prozent Gesamtbedarf können lange Überschneidungen notwendig sein.
+Das historische 140-Prozent-Beispiel ist keine allgemeingültige Lösung.
+
+Preview 8 repariert gewöhnliche Übergaben anhand echter Restbudgets, laufender
+Mindest-ON-Verpflichtungen, Mindest-AUS-Sperren und möglicher nächster Freigaben.
+Ein noch nicht gestarteter gewöhnlicher Puls darf innerhalb seiner bestehenden
+Frist warten oder vorgezogen werden. Eine Zukunftsprognose ist keine neue
+Heizberechtigung. Fällt Bedarf weg, können Lücken unvermeidbar bleiben.
+
+### Sofortanforderungen und gewöhnliche Startberechtigung
+
+Eine echte wirksame Sollwertänderung oder OFF→HEAT wird sofort bewertet. Ergibt
+die ursprüngliche PWM-Logik einen zulässigen Heizpuls, wartet dieser nicht auf
+einen optimierten späteren Slot. Mindest-AUS und andere Schutzgrenzen bleiben
+wirksam; ein deshalb blockierter Prioritätspuls wird zur ersten zulässigen Zeit
+erneut versucht. Kleine PID-Schwankungen sind keine Prioritätsereignisse.
+Ein Sollwertwechsel erzeugt ohne echten Bedarf und verdientes Niedriglastguthaben
+keinen künstlichen Mindestpuls. Direkter 100-Prozent-Bedarf bleibt durchgängig.
+
+Seit Preview 7 ist je Zone und stabiler Gruppenperiode höchstens ein
+gewöhnlicher OFF→ON-Start erlaubt. Ein zusammenhängendes Pulsbudget kann nach
+seinem Ende nicht durch PID-Rauschen oder abgelaufene Mindest-AUS-Zeit erneut
+starten. Echte Prioritätsstarts bleiben Ausnahmen und verbrauchen ebenfalls die
+gewöhnliche Berechtigung dieser Periode. Bereits laufendes ON wird an der
+Periodengrenze nicht künstlich unterbrochen.
+
+### Zeitbilanz und Wiederherstellung
+
+Reserviert wird die wirksame elektrische Pulsdauer der vorhandenen PWM-Logik,
+einschließlich Ventilfahrt, Transport-/Pipeline-Effekten, vorzeitigem Schließen
+und wirksamer Mindestlaufzeit. Reine Phasenänderungen erzeugen kein zweites
+Budget. Beobachtete ON-Sekunden bezahlen die Reservierung genau einmal.
+
+Die Bilanz lautet unverändert:
+
+```text
+requested_seconds = observed_on_seconds + remaining_credit_seconds
+                    + cancelled_balance_seconds
+```
+
+Restguthaben und abgeschlossene Korrekturbilanz sind vorzeichenbehaftet.
+Negatives Guthaben kann echte Mehrlaufzeit durch Mindest-ON enthalten und
+reduziert nachfolgend geschuldete Zeit. `unmet_debt_seconds` zeigt nur den
+positiven Teil; null bedeutet deshalb nicht automatisch Nullbilanz.
+
+Seit Preview 6 werden Budget, Freigaben, Prioritätsfristen und bekannte
+Ausgangskanten im vorhandenen HA Store journalisiert. Bekannte bereits
+gelieferte Pulse werden durch Neustart nicht wiederholt. Unbeobachtete
+Ausfallzeit gilt nicht als nachgewiesene Wärmelieferung. Ungewisse ON-Befehle
+werden konservativ behandelt; Minderlieferung einer unterbrochenen Periode ist
+möglich. Die erste Installation hat kein früheres Journal. Der Speicher wird
+nicht von Hand bearbeitet oder gelöscht. Gruppenmesswerte beginnen nach einem
+Neustart neu, während Zonenbilanzen und bestimmte Zähler erhalten bleiben.
+
+### Kompatibilität und Fehlerverhalten
+
+Kühlung, AC, HEAT_COOL, analoge Ventile mit `pwm: 0`, invertierte oder mehrere
+Ausgänge je Zone werden nicht koordiniert. Gemischte Perioden, doppelte
+physische Ausgänge oder unvereinbare Mindestzeiten führen zum unabhängigen
+Rückfall. Fehlende Mitglieder bleiben bis zur tatsächlichen Bereitschaft
+unabhängig. OFF oder pausierte Zonen werden nie als Lückenfüller eingesetzt.
+Rückfall ist normalerweise bis zum Neustart verriegelt; wiederholtes blindes
+Neustarten ersetzt keine Ursachenprüfung. Speicherfehler blockieren neue ON
+und verlangen eine sichere Aufarbeitung statt eines unjournalisierten Bypasses.
+
+Ein `input_boolean` bestätigt nur den Helferzustand. Ein ausgefallenes Panel,
+verzögerte Relaisübernahme oder manuelle Übersteuerung kann unsichtbar bleiben.
+Alle Laufzeit- und Überlappungsschätzungen beziehen sich dann auf den Helfer,
+nicht auf nachgewiesene Relaisstellung, Ventilöffnung oder Wasserdurchfluss.
+Auch eine elektrische Vier-Minuten-Übergabe beweist keinen Mindestdurchfluss.
+
+### Installation, Kontrolle und Rollback
+
+1. Integrationsdateien, YAML und Lernspeicher sichern; die bisherige Version
+   für einen Rollback notieren. Nicht zwei Integrationen derselben Domain
+   installieren. In HACS den Fork als benutzerdefiniertes Integrations-Repository
+   verwenden und ausdrücklich die passende Vorabversion wählen; Fork-`main`
+   enthält die Upstream-Basis, nicht die Preview-Entwicklung.
+2. Zunächst den bisherigen Betrieb prüfen. Vor dem überwachten Aktivieren oder
+   Upgrade beteiligte Thermostate OFF setzen und Helfer sowie Relais OFF prüfen.
+   Beim ersten Upgrade ohne Journal die vorhandene Mindest-AUS-Zeit beachten.
+3. Koordination mit tatsächlichen IDs und gleichen Perioden konfigurieren,
+   HA neu starten und HEAT fortsetzen. Weder Lernreset noch separate Patch-Skripte
+   sind erforderlich. `pwm_coordination.mode` muss `active` werden.
+4. Gewöhnliche Übergaben, echten Sollwertwechsel, OFF→HEAT, Bedarfsentzug,
+   Periodengrenze und Wiederanlauf getrennt prüfen. Den vollständigen
+   [Testplan](pwm-runtime-handovers.md#deutsch) verwenden.
+5. Für unabhängige Steuerung `enabled: false` setzen oder den Block entfernen
+   und HA neu starten. Bei Code-Rollback die bekannte frühere Version und deren
+   dokumentierte Speicherkompatibilität verwenden; Backup behalten.
+
+Die Diagnosefelder, Quellstände und vollständigen historischen Prüfmatrizen
+stehen im englischen Teil und den verlinkten zweisprachigen Berichten. Die
+neuen `runtime_*`-Werte beschreiben einen Restplan mit Prognosen; die bisherigen
+`projected_cyclic_starts` beschreiben einen idealen zyklischen Plan. Keine
+dieser Projektionen ersetzt echte beobachtete Schaltkanten. Die automatische
+Testabdeckung ist kein Nachweis physischer Pumpen- oder Heizungsvalidierung.

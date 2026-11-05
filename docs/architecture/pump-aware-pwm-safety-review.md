@@ -1,5 +1,11 @@
 # Pump-aware PWM: safety review and implementation blocker
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](../fork-extensions.md)
+
+> **Scope / Geltungsbereich:** Historical release/design record; use the [current documentation index](../fork-extensions.md) for preview 8. Historischer Versions-/Designbericht; aktuelle Bedienung und Nachweise stehen im Erweiterungsindex. Original test tables and commit/CI references apply to both language sections and retain their original revision context.
+
+## English
+
 Historical review of the initial prerequisite-only commit. The later
 implementation and current evidence are documented in the
 [verification report](pump-aware-pwm-verification.md).
@@ -22,7 +28,7 @@ Five deterministic counterexamples are provided in
 The strict expected failures document open gates, not passing safety checks.
 They only accept assertion failures; unrelated exceptions are not masked.
 
-## Checkout and specification compatibility
+### Checkout and specification compatibility
 
 The supplied workspace was an empty Git repository with no commits or remotes.
 Upstream was cloned into `ha-adaptive-climate/`, then the feature branch was
@@ -62,7 +68,7 @@ The personal fork now exists at
 [filou01/ha-adaptive-climate](https://github.com/filou01/ha-adaptive-climate).
 These updates do not resolve the safety gates or add runtime configuration.
 
-## Reproduced safety and accounting gaps
+### Reproduced safety and accounting gaps
 
 Use the real `HeaterController`, `PWMController`, service caller, pipeline and
 bookkeeper with the repository's HA stubs. A fake monotonic clock and explicit
@@ -90,7 +96,7 @@ transaction contract. Changing common controller semantics silently would also
 violate the requested disabled-mode equivalence. This branch leaves runtime
 behavior intact rather than claiming those repairs and their proofs exist.
 
-## Architecture required before enabling scheduling
+### Architecture required before enabling scheduling
 
 1. Extract demand/pulse preparation from execution. Represent an effective pulse
    as a versioned reservation, including raw accumulator credit, effective
@@ -121,7 +127,7 @@ original minimum timing and safety constraints remain authoritative. This
 statement is an acceptance requirement, not a claim about an implemented
 coordinator on this branch.
 
-## Validation evidence
+### Validation evidence
 
 Executed on Windows with CPython 3.14.5 in local `.venv` (the ordinary `python`
 command resolves to an unusable Windows App Execution Alias). Tools: pytest
@@ -157,7 +163,7 @@ The reference checker establishes only interval arithmetic: 5,040 zone-seconds,
 960 seconds and overlap 480 seconds. It is neither an optimizer nor a dynamic
 simulation, and it proves no production delivery, safety or hydraulic behavior.
 
-## Changed files, limitations and rollback
+### Changed files, limitations and rollback
 
 The intended committed diff contains only this review and
 `tests/test_pwm_coordination_prerequisites.py`. The filled handoff `PR_BODY.md`,
@@ -174,3 +180,100 @@ HA, and continue using the existing integration. The tests/review commit can
 be reverted in a later Git commit without touching adaptive learning storage.
 If the proposal YAML was manually installed, remove that unsupported block and
 validate HA configuration before restarting. Do not clear learning storage.
+
+## Deutsch
+
+### Einordnung des historischen Berichts
+
+Dieser Bericht dokumentiert eine anfängliche Sicherheitsprüfung gegen
+`48add428ccc9d356be186f69049526a7d91116c9` (0.67.0) am 04.11.2026. Der damalige
+Status **BLOCKED** betraf ausschließlich Vorbedingungstests ohne ausgelieferten
+Scheduler. Aussagen über fehlendes Schema, fehlenden Fork oder noch nicht
+existierende Releases gelten nur für diesen Prüfzeitpunkt. Die aktuelle
+[Benutzeranleitung](../pump-aware-pwm.md#deutsch) und der
+[Preview-8-Bericht](../pwm-runtime-handovers.md#deutsch) beschreiben den heutigen
+Stand. Die historische Warnung ist kein aktuelles Installationsverbot.
+
+### Geprüfte Verträge und Sicherheitslücken
+
+Im damals zunächst leeren Workspace wurde Upstream ausgecheckt. Der private
+Handoff blieb lokal und wurde nicht als Implementierungsauftrag oder mit
+privaten Anlagenbeispielen veröffentlicht. Mangels exaktem Handoff-Quellcommit
+wurde keine zeitliche Upstream-Breaking-Change-Behauptung aufgestellt.
+
+Die umfangreiche englische Modultabelle ist der gemeinsame technische
+Prüfnachweis. Kernaussagen: Elektrische Pulsdauer ist nicht einfach PID-Prozent
+mal Periode; Ventilfahrt, Schließvorlauf, Pipeline und Akkumulation zählen mit.
+Die damaligen Controller-Methoden unterschieden Erfolg, Abweisung und Fehler
+nicht zuverlässig nach außen. Lern-Events und Zeitstempel durften deshalb
+nicht als Beleg erfolgreicher physischer Aktuation verwendet werden. Ein
+bereits abgeschickter Gerätebefehl kann nicht allein durch Timer-Invalidierung
+zurückgeholt werden. Echte Entity-IDs dürfen erst nach Wiederherstellung und
+Controller-Bereitschaft gebunden werden. `loops` war kein gültiger Ersatz für
+die neuen unabhängigen hydraulischen Gewichte. HA-Stubs sind keine echte
+HA-Installation.
+
+Fünf deterministische Gegenbeispiele blieben damals als strikte erwartete
+Assertion-Fehler bestehen:
+
+| Beobachtung | Erforderliche Vorbedingung |
+| --- | --- |
+| Fehlgeschlagenes ON ließ das Relais OFF, emittierte aber bereits `HEATING_STARTED` | Bestätigte Aktuation und Lernbuchhaltung sauber trennen |
+| Mindest-AUS-Abweisung verlor 600s Guthaben ohne Gerätebefehl | Erst nach angenommenem echtem Puls abbuchen; frühesten sicheren Retry bewahren |
+| Fehlgeschlagener Akkumulatorpuls verbrauchte Guthaben | Reservierung erhalten/korrekt freigeben, keine erfundene Lieferung |
+| Wartendes ON konnte trotz späterem Sicherheits-OFF mit ON enden | Ein Writer, synchrone Invalidierung und Abgleich nach Await |
+| Fehlgeschlagenes OFF ließ das Relais ON, emittierte aber `HEATING_ENDED` | Zustand und Bilanz nach Fehlern abgleichen |
+
+Ein erfolgreicher Kontrollfall belegte, dass der Harness einen echten
+Modellpuls auslösen und beobachten konnte. Die In-Flight-Simulation prüfte
+eine zukünftige getrennte Scheduler-Einstiegsstelle; sie behauptete keinen
+Nachweis desselben Rennens durch die damalige normale temperaturgesperrte
+Regelschleife oder auf physischer Hardware. Tatsächliche Geräte haben weitere
+Service-/Netz-/Rückmeldelatenzen.
+
+### Geforderte Architektur vor Aktivierung
+
+1. Puls-/Guthabenvorbereitung von Ausführung trennen; effektive Dauer,
+   Akkumulatorreserve, Schließvorlauf, Pipeline und Grenzen genau einmal
+   berücksichtigen. Unkonfigurierte Steuerung unverändert lassen.
+2. Explizite Ergebnisse für Erfolg, Mindestzeitabweisung, Nichtverfügbarkeit,
+   Fehler und Teilerfolg einführen; beobachtete Ausgangszeit abrechnen.
+3. Einen gemeinsamen Ausgangseigentümer für normale Regelung, Sofortbedarf,
+   Sicherheit und Rückfall vorsehen. Nach jedem wartenden I/O erneut prüfen.
+4. Erst danach reinen begrenzten Planer, validierte Gruppen, echte Adapter und
+   genau einen widerruflichen Folgetimer je Gruppe ergänzen.
+5. I01–I19 und Lebenszyklus-/Rückfallregeln nachweisen und denselben Tagestrace
+   gegen unabhängige PWM vergleichen.
+
+Ein zulässiger Sollwertwechsel oder OFF→HEAT sollte im laufenden Zyklus zur
+ersten sicheren Gelegenheit reagieren. Das war eine Abnahmeanforderung, noch
+kein bestandener Laufzeitnachweis dieser frühen Revision.
+
+### Damalige Messergebnisse
+
+Die englische Originalmatrix einschließlich aller Befehle und Pfade bleibt
+als unveränderlicher Prüfkontext erhalten. Windows CPython 3.14.5:
+vor neuen Tests 3435 bestanden, elf fehlgeschlagen, elf übersprungen;
+danach 3436 bestanden, dieselben elf Fehler, elf übersprungen und fünf strikte
+erwartete Fehler. Mit `--runxfail` waren es ein bestandener und fünf tatsächlich
+fehlgeschlagene Vorbedingungsfälle. Ruff, Formatierung und Pyright bestanden.
+Die elf übrigen Fehler stammten bereits aus `%b %-d` in der Berichtsformatierung.
+
+Das Referenzskript prüfte lediglich Intervallarithmetik: 5040 Zonensekunden,
+3600 Unionsekunden, null zyklische Starts im eingeschwungenen Modell,
+960 Sekunden Alleinlauf und 480 Sekunden Überschneidung der großen Zone.
+Es war weder Produktionsplaner noch dynamische Simulation oder hydraulische
+Validierung. Laufzeit-/Schema-Äquivalenz, volle I01–I19-Abnahme,
+Tagesvergleich, Linux-CI/HACS/hassfest, reale HA-/Hardware- und Raspberry-Pi-
+Prüfung sowie Wiki-Veröffentlichung waren damals nicht durchgeführt.
+
+### Historischer Rollback und heutige Verwendung
+
+Der frühe Commit enthielt nur Bericht und Vorbedingungstests, keine
+Aktivierungsmöglichkeit. Er konnte ohne HA-Eingriff rückgängig gemacht werden.
+Falls damals vorgeschlagenes, noch nicht unterstütztes YAML eingefügt wurde,
+musste es entfernt und die Konfiguration geprüft werden; Lernspeicher sollte
+nicht gelöscht werden. Die später umgesetzten Controller-, Journal- und
+Planungsänderungen haben eigene Nachweise. Diese historischen Ergebnisse
+werden nicht als heutiger bestandener Safety-Test oder als aktuelle
+Rollout-Anleitung ausgegeben.

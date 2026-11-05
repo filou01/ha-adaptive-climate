@@ -1,5 +1,11 @@
 # PWM restart journals — preview 6
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](fork-extensions.md)
+
+> **Scope / Geltungsbereich:** Historical release/design record; use the [current documentation index](fork-extensions.md) for preview 8. Historischer Versions-/Designbericht; aktuelle Bedienung und Nachweise stehen im Erweiterungsindex. Original test tables and commit/CI references apply to both language sections and retain their original revision context.
+
+## English
+
 > Preview 7 adds [ordinary-start entitlement recovery](pwm-ordinary-starts.md).
 > It also conservatively consumes the recovery period for an uncertain ON present
 > at startup; minimum-OFF expiry alone cannot authorize another ordinary pulse.
@@ -10,7 +16,7 @@ one in the same period. Preview `v0.67.1-pwm.6` journals these reservations and
 the last known output edge across restarts. Independent legacy PWM still has
 its original session-local timing; this change applies to coordinated groups.
 
-## Architecture and guarantees at the HA output boundary
+### Architecture and guarantees at the HA output boundary
 
 - The existing HA learning Store receives an additive `pwm_coordination` map,
   with a versioned journal per named group. Its outer storage version remains 5
@@ -42,7 +48,7 @@ its original session-local timing; this change applies to coordinated groups.
   failed uncertain-ON reconciliation uses `restart_reconciliation_failed`.
   These states require investigation/recovery, not repeated blind restarts.
 
-## What cannot be observed during downtime
+### What cannot be observed during downtime
 
 An unchanged matching output state uses its last known saved edge. A mismatching
 state has no reliable edge time, so its minimum-time guard starts conservatively
@@ -77,7 +83,7 @@ are recoverable. If the group falls back to independent legacy control, that
 path retains its original restart behavior; this journal is not a general
 restart fix for unconfigured/disabled/unsupported thermostats.
 
-## Verification
+### Verification
 
 Final source/test commit: `b0a2ef4a808ebefec498a3acfd3cd0b1a1a03177`.
 Release documentation is added without changing that source/test tree.
@@ -130,7 +136,7 @@ supervised 24h hydronic heating, variable maintenance-duty restart simulation
 with real actuator timing, full Windows suite for preview 6 and wiki publication.
 Six existing pytest asyncio-marker warnings remain.
 
-## Changed files and rollout
+### Changed files and rollout
 
 - `adaptive/persistence.py`: additive per-group journal load/save under the
   existing Store lock; completed learner data and other group rows are retained.
@@ -166,3 +172,121 @@ preview 5 is compatible with the additive Store field but ignores the journal
 and reintroduces the original repeated-pulse problem. All earlier learning fixes
 remain included, including the documented unresolved maintenance-cycle case
 from issue #6. No upstream PR/issue/comment is automatically published.
+
+## Deutsch
+
+### Zweck und gespeicherter Zustand
+
+Preview 6 führt Journale für koordinierte PWM-Budgets ein. Zuvor konnte ein
+HA-Neustart Gruppenursprung und Lieferbilanz verwerfen und einen bereits
+abgeschlossenen Puls derselben Periode erneut vollständig anfordern. Die
+Korrektur gilt für koordinierte Gruppen; unabhängige Legacy-PWM behält ihre
+bisherige sitzungsbezogene Zeitbasis. Preview 7 ergänzt die Wiederherstellung
+der gewöhnlichen Startberechtigung und behandelt ungewisses ON konservativer.
+
+Der bestehende HA-Lernspeicher erhält einen zusätzlichen
+`pwm_coordination`-Eintrag mit einem versionierten Journal je Gruppe. Die äußere
+Store-Version bleibt 5, die Lerner-Nutzlast 12. Enthalten sind Budget und
+gelieferte/restliche/abgeschlossene Sekunden, logische Periode, nächste Freigabe,
+Ziel-/Modussignatur, Priorität und Verschiebungsfrist, bekannte Ausgangskante,
+Niedriglastguthaben und Ventil-/Pipelinezustand. UTC-Zeitstempel überbrücken
+Neustarts; während einer Sitzung wird monotone Zeit verwendet.
+
+Gespeichert wird vor Befehlen, nach bestätigten Befehlen, beim Abgleich und
+bei geordnetem Herunterfahren/Entladen. Nach jedem wartenden Speichervorgang
+wird erneut auf Invalidierung geprüft. Ein inzwischen eingetretenes OFF,
+eine Pause oder Zieländerung kann einen veralteten ON-Befehl widerrufen.
+
+### Wiederherstellung und Schutzgrenzen
+
+Ein fertig gelieferter gewöhnlicher Puls wird nicht neu erzeugt; ein laufender
+behält nur seinen Rest. Ausgefallene Perioden werden nicht nachgeholt. Echte
+Zieländerungen und OFF→HEAT behalten Priorität, auch bei einer schon vor dem
+Neustart durch Mindest-AUS blockierten Anforderung. Direkter 100-Prozent-Bedarf
+bleibt durchgängig. Bereits geladene Mitglieder können aus einem gültigen
+Journal wiederhergestellt werden, ohne ihre Historie beim späteren Binden der
+letzten Zone zurückzusetzen; ungebundene Zeilen bleiben erhalten.
+
+Ein unterbrochener, unbestätigter ON-Befehl ist ungewiss. Sein Restbudget wird
+nicht als sicherer erneut abspielbarer Puls behandelt. Vorhandenes ungewisses
+ON wird über `HeaterController` OFF abgeglichen, anschließend gilt Mindest-AUS.
+Seit Preview 7 kann damit auch die gewöhnliche Freigabe der Recovery-Periode
+als verbraucht gelten. Echte neue Priorität bleibt erlaubt. Zulässiger direkter
+100-Prozent-Bedarf darf stattdessen ON fortsetzen.
+
+Speicherfehler führen zu `restart_storage_error`: Neue ON-Befehle werden auch
+gegen einen unabhängigen Bypass blockiert, ein Sicherheits-OFF wird angefordert.
+Ungültige/unpassende Journale melden `restart_state_invalid`; fehlgeschlagener
+ON-Abgleich meldet `restart_reconciliation_failed`. Solche Zustände verlangen
+eine Ursachenprüfung, keine wiederholten blinden Neustarts.
+
+### Unbeobachtete Zeit und Bilanz
+
+Ein übereinstimmender Zustand nutzt die bekannte gespeicherte Ausgangskante.
+Bei Abweichung ist deren Zeitpunkt unbekannt; die Schutzfrist beginnt
+konservativ bei der Wiederherstellung. Unbeobachtete ON-Zeit belastet höchstens
+die noch reservierte Zeit und wird als ungewiss ausgewiesen. Ein unbestätigter
+Befehl kann das ganze Restbudget zurückziehen, selbst wenn das Gerät nie ON
+war. Minderlieferung der unterbrochenen Periode ist deshalb möglich; spätere
+Perioden berechnen ihren aktuellen Bedarf regulär.
+
+`restart_uncertain_seconds` bedeutet ungewisse reservierte Budgetsekunden,
+nicht gemessene zusätzliche Laufzeit. Sie sind Teil der abgeschlossenen Bilanz:
+
+```text
+requested_seconds = observed_on_seconds + remaining_credit_seconds
+                    + cancelled_balance_seconds
+```
+
+Die letzten beiden Größen sind vorzeichenbehaftet. `unmet_debt_seconds` zeigt
+nur positives Restguthaben. Zonenbilanzen und Prioritätshistorie überleben den
+Neustart, Gruppen-Pumpenschätzungen und Generation beginnen dagegen neu.
+
+Bei NSPanel/ESPHome mit Helferausgang ist nur der Helfer sichtbar. Unbemerkte
+Relaisänderungen während des Ausfalls, die zum selben Zustand zurückkehren,
+lassen sich nicht rekonstruieren. Das Journal beweist weder Wasserfluss noch
+physische Wärmelieferung. Die erste Installation besitzt kein altes Journal
+und kann vergangene Lieferung nicht aus alten Versionen oder CSVs erfinden.
+
+### Historische Verifikation
+
+Geprüfter Quell-/Teststand: `b0a2ef4a808ebefec498a3acfd3cd0b1a1a03177`.
+Die Originaltabellen im englischen Teil gelten für Preview 6: 50 Windows-
+Controller-/Speichertests; Linux 3.11/3.12 jeweils 3628 bestanden und 11
+übersprungen; Ruff/Format/Pyright, Linux-Matrix, HACS und hassfest erfolgreich.
+
+Vier deterministische Tagesmodelle verwenden echte Controller/Adapter mit
+In-Memory-Store, zwei 40-Prozent-Zonen, Gewichte 4/1, 120 Sekunden Ventilfahrt
+und 600 Sekunden Mindest-ON/AUS. Für Switch und Helfer werden jeweils null und
+143 ungeordnete Neustarts verglichen. In allen vier Läufen: 36000 ON-Sekunden
+je Zone, 24 Gruppenstarts, 66240 gemeinsame ON-Sekunden, 36000 angeforderte
+Sekunden je Zone und null Restguthaben. Das beweist keine Heizungs-Effizienz.
+
+Das Modell erzeugt bei seinem 30-Sekunden-/Zwei-Zonen-Takt ungefähr 5952
+Journal-Speicherungen pro Tag. SD-Schreibvolumen, Speicherlatenz und
+Raspberry-Pi-Leistung wurden nicht gemessen. Nicht durchgeführt waren reale
+HA-/Geräte-Neustartprüfung, physische Panel-/Pumpen-/Durchflussprüfung, echte
+Stromausfall-/OS-Cache-Versuche, überwachter Tagesbetrieb, variabler Maintenance-
+Neustartversuch mit realen Aktorzeiten, vollständige Windows-Suite für Preview 6
+und Wiki-Veröffentlichung. Die acht früheren unabhängigen Vergleichsmodelle
+behalten ihre dokumentierten Grenzen.
+
+### Installation, Fehlerbehandlung und Rückkehr
+
+Vorher Integration, Konfiguration und Lernspeicher sichern. Beim ersten Upgrade
+Thermostate OFF setzen, Helfer/Relais OFF prüfen und Mindest-AUS verstreichen
+lassen; frühere Versionen haben keine journalisierte Kante. Passende HACS-
+Vorabversion installieren, HA neu starten und HEAT fortsetzen. YAML bleibt
+gültig; weder Lernreset noch Zusatzskript ist nötig.
+
+Zur Kontrolle einen gewöhnlichen Puls fertig laufen lassen, in derselben
+Periode neu starten und prüfen, dass er nicht wiederholt wird. Eine echte
+Sollwerterhöhung separat unter Beachtung von Mindest-AUS prüfen. Helfer- und
+echte Relaisstellung getrennt beobachten.
+
+Bei `restart_state_invalid` Konfiguration, Speicher und Systemuhr prüfen;
+Mitglieder, Periode und Ausgangsidentität müssen passen. Gegebenenfalls das
+bekannte passende Backup verwenden, nicht den gesamten Lernspeicher löschen.
+Deaktivieren plus Neustart liefert unabhängige Steuerung. Preview 5 ignoriert
+beim Code-Rollback die additive Journalstruktur und bringt das alte Problem
+zurück. Die ursprünglichen Quell-/Testdateien und CI-Links stehen oben.

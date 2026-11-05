@@ -20,20 +20,14 @@
 
 # Adaptive Climate
 
-> **Pump-aware PWM development in this fork:** the `codex/pump-aware-pwm`
-> branch implements an opt-in heating PWM preview with configurable minimal or
-> maximal overlap and immediate eligible target/mode response. It is disabled
-> by default. See [configuration and rollback](docs/pump-aware-pwm.md) and the
-> [verification report](docs/architecture/pump-aware-pwm-verification.md).
-> Preview 2 also includes [the learning-cycle and PID diagnostics hotfixes](docs/learning-hotfixes.md).
-> Preview 3 fixes [parallel startup of the shared learning store and learning-window entity](docs/learning-startup-fix.md).
-> Preview 4 supports [input_boolean relay proxies such as NSPanel/ESPHome](docs/input-boolean-pwm.md).
-> Preview 5 fixes [PWM callbacks dispatched outside the HA event loop](docs/pwm-callback-safety.md).
-> Preview 6 adds [PWM budget and minimum-time recovery across HA restarts](docs/pwm-restart-safety.md).
-> Preview 7 enforces [one ordinary PWM start per logical period](docs/pwm-ordinary-starts.md), including after restart.
-> Preview 8 repairs [executable minimal-overlap handovers](docs/pwm-runtime-handovers.md) using remaining budgets, switching bounds and advisory next-period opportunities.
-> The fork's `main` remains the upstream baseline; preview releases identify
-> the development commit and remaining validation requirements.
+> **Optional fork preview — v0.67.1-pwm.8:** development on
+> `codex/pump-aware-pwm` adds pump-aware HEAT PWM coordination, durable budgets,
+> ordinary-start limits and executable minimal handovers, alongside narrow
+> learning/startup fixes. Coordination is disabled by default. This does not
+> imply the upstream release or this fork's baseline `main` contains the preview.
+> Start with the **[extension documentation (English / Deutsch)](docs/fork-extensions.md)**,
+> [configuration and rollback](docs/pump-aware-pwm.md#english), and
+> [current evidence and remaining validation](docs/extension-validation.md#english).
 
 ## Smart PID Climate Control with Adaptive Learning for Home Assistant
 
@@ -56,6 +50,12 @@ An advanced climate integration featuring PID control with automatic tuning, ada
 ## 📚 Full Documentation
 
 **[Visit the Wiki](https://github.com/afewyards/ha-adaptive-climate/wiki)** for comprehensive documentation including:
+
+The upstream Wiki describes the main project. For this fork's optional PWM and
+learning/startup extensions, use the [bilingual extension index](docs/fork-extensions.md).
+Original project documentation additions remain in English; extension pages
+provide English and German sections, with historical release reports clearly
+separated from current setup instructions.
 
 - [Installation & Setup](https://github.com/afewyards/ha-adaptive-climate/wiki/Installation-&-Setup) - Detailed installation guide and first-time configuration
 - [Configuration Reference](https://github.com/afewyards/ha-adaptive-climate/wiki/Configuration-Reference) - Complete parameter reference

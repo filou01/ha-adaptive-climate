@@ -1,0 +1,436 @@
+diff --git a/Adaptive-Learning.md b/Adaptive-Learning.md
+index 2297226..06725e0 100644
+--- a/Adaptive-Learning.md
++++ b/Adaptive-Learning.md
+@@ -1,5 +1,30 @@
+ # Adaptive Learning
+ 
++<!-- pump-aware-fork-preview:start -->
++## Fork preview: narrow learning and shared-startup fixes
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++The fork preview contains fixes separate from optional PWM scheduling.
++Restored transient cycle flags no longer suppress a fresh learning session;
++zero/tiny demand shares one low-demand deadline so small fluctuations cannot
++continually cancel settling. Forced OFF closes an active session even when
++the electrical output is already OFF. The broader repeated-maintenance case
++at or above the existing 2% threshold remains unresolved by these narrow fixes.
++
++PID recommendation diagnostics read actual HEAT gains and distinguish missing
++cycles, cooldown and usable data. Viewing a recommendation does not spend
++cooldown/cycle credit; successful application does. Learner payload 12 adds
++the durable adjustment-cycle counter while retaining prior completed cycles,
++gains and confidence. Shared store initialization is serialized before
++publication/global number discovery. No manual learning reset is required.
++
++These learning/startup changes remain active when PWM coordination is disabled.
++The coordinated-PWM journal is a separate version-1 map in outer Store version
++5; it does not replace learner history. See [learning fix scope](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/learning-hotfixes.md#english)
++and [shared startup](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/learning-startup-fix.md#english). No general PID outside-term redesign is implied.
++<!-- pump-aware-fork-preview:end -->
++
+ The thermostat automatically learns from heating cycles and continuously adjusts PID parameters for optimal performance. This eliminates the need for manual tuning after the initial physics-based initialization.
+ 
+ ## What the System Learns
+diff --git a/Configuration-Reference.md b/Configuration-Reference.md
+index adaea0e..58493e9 100644
+--- a/Configuration-Reference.md
++++ b/Configuration-Reference.md
+@@ -1,5 +1,37 @@
+ # Configuration Reference
+ 
++<!-- pump-aware-fork-preview:start -->
++## Optional pump-aware PWM configuration in the fork preview
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++This is a separate opt-in domain-level block under the existing
++`adaptive_climate:` mapping. It is not a thermal group, manifold, pump-flow
++controller or replacement for per-zone PWM. Merge it into the existing mapping
++rather than duplicate the top-level key. Use actual restored entity IDs.
++
++| Key | Default / supported values |
++| --- | --- |
++| `pwm_coordination.enabled` | `false`; explicit Boolean |
++| `pwm_coordination.mode` | `load_balancing` only |
++| `groups[].name` | Unique nonempty physical pump-group name |
++| `overlap_strategy` | `minimal` or `maximal`; default `minimal` |
++| `handover_overlap_seconds` | 240; finite 0–1800 seconds |
++| `max_deferral_seconds` | 3600; finite 0–7200 seconds; ordinary pulses only |
++| `zones[].entity` | Explicit climate entity; 2–16 unique members per group |
++| `zones[].hydraulic_weight` | 1; finite and strictly positive; a preference, not measured flow |
++
++Supported groups use the same positive period, HEAT-only PWM and one
++non-inverted `switch.*` or `input_boolean.*` output per zone. Cooling/AC,
++analog outputs, inverted/multiple outputs, duplicate physical outputs and
++incompatible periods/minimum times are not coordinated. Unknown options and
++duplicate membership are rejected. No obsolete `loops` option is introduced.
++
++The [current fork guide](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pump-aware-pwm.md#english) contains the complete illustrative YAML,
++runtime compatibility checks, supervised activation and rollback. Do not paste
++the preview block into an upstream installation that does not support it.
++<!-- pump-aware-fork-preview:end -->
++
+ Complete reference for all configuration parameters and examples.
+ 
+ ## Configuration Levels
+diff --git a/Development.md b/Development.md
+index 2dd50c6..ad25328 100644
+--- a/Development.md
++++ b/Development.md
+@@ -1,5 +1,30 @@
+ # Development Guide
+ 
++<!-- pump-aware-fork-preview:start -->
++## Fork preview: scheduling architecture and evidence
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++Optional PWM development is isolated on `filou01/ha-adaptive-climate` branch
++`codex/pump-aware-pwm`. The domain remains unchanged and no optimizer runtime
++dependency is added. HAZoneAdapter binds actual restored entities to a zone
++protocol; pure cyclic/executable planners issue no HA services. A group owns
++one cancellable next-event timer. Serialized HeaterController actuation,
++generation checks after awaits, output confirmation and durable write-ahead
++budgets keep execution and observed-time accounting separate from plan proposals.
++
++The [bilingual extension index](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/fork-extensions.md#english) links current configuration,
++historical source-specific reports and automated/supervised test plans.
++The current software was tested on Linux Python 3.11/3.12, with separate
++HACS/hassfest checks. Mocked HA boundaries and deterministic daily electrical
++replays do not establish physical hydraulic delivery or hardware approval.
++Current numbers, exact commits and CI links are in [validation status](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/extension-validation.md#english).
++
++Fork preview identity uses explicit prerelease tags; the semantic-release-managed
++manifest version remains the upstream baseline. Documentation updates may be
++attached to an existing preview release without moving its installed software tag.
++<!-- pump-aware-fork-preview:end -->
++
+ This guide covers the architecture, testing, and development workflow for the HA Adaptive Climate integration.
+ 
+ ## Architecture Overview
+diff --git a/Fork-Extensions.md b/Fork-Extensions.md
+new file mode 100644
+index 0000000..a2a60a0
+--- /dev/null
++++ b/Fork-Extensions.md
+@@ -0,0 +1,147 @@
++# Fork extensions / Fork-Erweiterungen
++
++[English](#english) · [Deutsch](#deutsch)
++
++## English
++
++This is the documentation entry point for the optional extensions in
++`filou01/ha-adaptive-climate`, development branch `codex/pump-aware-pwm`.
++Current software release: **[v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8)**.
++These features are a fork preview, not a claim that the upstream `main` or its
++published releases contain the same implementation. The domain remains
++`adaptive_climate`; do not install two copies of that domain.
++
++### Read first
++
++| Topic | Documentation |
++| --- | --- |
++| Configuration, minimal/maximal strategy, compatibility, installation and rollback | [User guide](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pump-aware-pwm.md#english) |
++| Current handover repair, diagnostics and automated/supervised test plans | [Preview 8 report](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#english) |
++| Current evidence, startup-only live check and remaining validation | [Validation status](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/extension-validation.md#english) |
++| Helper-to-relay topology and observation boundary | [input_boolean outputs](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/input-boolean-pwm.md#english) |
++| Budget recovery and first-upgrade limitations | [Restart journals](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-restart-safety.md#english) |
++| Ordinary start limits versus genuine priority demand | [Start entitlement](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-ordinary-starts.md#english) |
++
++### What the extensions do
++
++The opt-in coordinator shifts genuine effective HEAT PWM pulses across zones
++sharing one electrically OR-controlled pump. `minimal` first reduces avoidable
++group starts, then favors short handovers and solo operation of the highest-
++weight zone. It intentionally accepts longer pump energized time. `maximal`
++concentrates ordinary pulses and can trade more starts for less energized time.
++Neither mode invents heat, owns the pump relay, models physical hydraulic flow
++or bypasses minimum switching times. Eligible real target changes/OFF→HEAT
++retain immediate response; ordinary PID ticks are not priority events.
++
++| Introduced | Extension and reference |
++| --- | --- |
++| Preview 1 | Optional coordination, effective pulse reservations, observed-time accounting and serialized actuation; [historical verification](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-verification.md#english) |
++| Preview 2 | Narrow learning-cycle/settling and PID-diagnostic fixes, durable adjustment-cycle counter; [scope and unresolved maintenance case](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/learning-hotfixes.md#english) |
++| Preview 3 | Serialized shared store startup and single learning-window discovery; [startup fix](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/learning-startup-fix.md#english) |
++| Preview 4 | Mixed `switch`/`input_boolean` output support; [proxy limits](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/input-boolean-pwm.md#english) |
++| Preview 5 | Event-loop-safe timer and state callbacks; [callback fix and separate dt warning](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-callback-safety.md#english) |
++| Preview 6 | Durable PWM budgets, priority deadlines and minimum-time recovery; [journals](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-restart-safety.md#english) |
++| Preview 7 | One ordinary start per zone/group-origin epoch; [entitlement](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-ordinary-starts.md#english) |
++| Preview 8 | Executable minimal handovers using remaining budgets and switching bounds; [current repair](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#english) |
++
++Learning/startup fixes also apply when coordination is disabled. Disabling
++coordination restores independent output scheduling, not older learning code.
++The broader maintenance-learning problem and the PID outside/wind-term switch
++near target are not redesigned by these releases. No learning reset is required.
++
++### Evidence and historical records
++
++Each own extension page has English and German sections. Code identifiers,
++configuration examples, equations, immutable commit/CI references and original
++numeric evidence tables are shared technical records; a translation does not
++claim a new test run. Release-specific numbers stay attached to their original
++source revision. Current evidence is in [Validation status](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/extension-validation.md#english).
++
++The [original safety review](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-safety-review.md#english)
++and [overlap-policy decision](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-overlap-policy.md#english)
++are historical documents. Their original “not implemented”/“unsupported schema”
++statements are not current setup instructions. The
++[combined PR description](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-pr.md#english) is a draft,
++not an opened upstream pull request. Private installation traces are not
++included in this public documentation.
++
++Original project pages retain English additions. Prepared English additions
++for the upstream Wiki are included in this release's documentation bundle;
++their presence in the fork must not be confused with upstream acceptance.
++See the [Wiki patch, proposed pages and publication status](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/wiki-additions/README.md#english).
++Documentation updates are associated with the existing preview release through
++its notes and attachments; the installed software tag is not moved.
++
++## Deutsch
++
++Dies ist der Einstieg zu den optionalen Erweiterungen in
++`filou01/ha-adaptive-climate`, Entwicklungsbranch `codex/pump-aware-pwm`.
++Aktuelle Softwareversion:
++**[v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8)**.
++Es handelt sich um eine Fork-Vorabversion. Damit wird nicht behauptet, dass
++Upstream-`main` oder dessen Releases dieselben Funktionen enthalten. Die Domain
++bleibt `adaptive_climate`; nicht zwei Kopien derselben Domain installieren.
++
++### Zuerst lesen
++
++| Thema | Dokumentation |
++| --- | --- |
++| Konfiguration, Strategieauswahl, Kompatibilität, Installation und Rückkehr | [Benutzeranleitung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pump-aware-pwm.md#deutsch) |
++| Aktuelle Übergabekorrektur, Diagnose und automatisierter/überwachter Testplan | [Preview-8-Bericht](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#deutsch) |
++| Aktuelle Nachweise, begrenzte HA-Startprüfung und offene Validierung | [Prüfstatus](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/extension-validation.md#deutsch) |
++| Helfer mit nachgelagertem Relais und Beobachtungsgrenze | [input_boolean-Ausgänge](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/input-boolean-pwm.md#deutsch) |
++| Budget-Wiederherstellung und Grenzen der ersten Umstellung | [Neustartjournale](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-restart-safety.md#deutsch) |
++| Gewöhnliche Startbegrenzung und echte Sofortanforderungen | [Startberechtigung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-ordinary-starts.md#deutsch) |
++
++### Zweck der Erweiterungen
++
++Die ausdrücklich aktivierte Koordination verschiebt echte wirksame HEAT-
++PWM-Pulse von Zonen an einer gemeinsam elektrisch ODER-gesteuerten Pumpe.
++`minimal` reduziert zuerst vermeidbare gemeinsame Starts und bevorzugt danach
++kurze Übergaben sowie Alleinlauf der höher gewichteten Zone. Längere
++Pumpenlaufzeit wird bewusst akzeptiert. `maximal` bündelt gewöhnliche Pulse
++und kann kürzere Laufzeit gegen mehr Starts tauschen. Beide Strategien erzeugen
++keine zusätzliche Wärme, schalten nicht direkt das Pumpenrelais, modellieren
++keinen physischen Durchfluss und umgehen keine Mindestzeiten. Echte zulässige
++Zielwechsel und OFF→HEAT reagieren weiterhin sofort; normale PID-Updates sind
++keine Prioritätsereignisse.
++
++| Seit | Erweiterung und Verweis |
++| --- | --- |
++| Preview 1 | Optionale Koordination, effektive Reservierung, beobachtete Zeitbilanz und serialisierte Aktuation; [historischer Nachweis](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-verification.md#deutsch) |
++| Preview 2 | Enger Lernzyklus-/Settling- und PID-Diagnosefix, dauerhafter Anpassungszähler; [Grenzen und offener Maintenance-Fall](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/learning-hotfixes.md#deutsch) |
++| Preview 3 | Serialisierter gemeinsamer Store-Start und einmalige Learning-Window-Entdeckung; [Startkorrektur](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/learning-startup-fix.md#deutsch) |
++| Preview 4 | Gemischte Switch-/Helfergruppen; [Beobachtungsgrenze](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/input-boolean-pwm.md#deutsch) |
++| Preview 5 | HA-konforme Event-Loop-Callbacks; [Korrektur und separate dt-Warnung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-callback-safety.md#deutsch) |
++| Preview 6 | Dauerhafte PWM-Budgets, Prioritätsfristen und Mindestzeit-Wiederherstellung; [Journale](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-restart-safety.md#deutsch) |
++| Preview 7 | Eine gewöhnliche Startfreigabe je Zone und Gruppenepoche; [Startberechtigung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-ordinary-starts.md#deutsch) |
++| Preview 8 | Ausführbare minimale Übergaben aus Restbudgets und Schaltgrenzen; [aktuelle Korrektur](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#deutsch) |
++
++Lern-/Startkorrekturen gelten auch bei deaktivierter Koordination. Deren
++Deaktivierung stellt unabhängige Ausgangsplanung her, nicht den alten
++Lerncode. Der größere Maintenance-Lernfall und das Umschalten des PID-
++Außen-/Windanteils nahe Soll werden nicht neu entworfen. Kein Lernreset ist nötig.
++
++### Nachweise und historische Dokumente
++
++Jede eigene Erweiterungsseite hat einen englischen und deutschen Abschnitt.
++Kennungen, Konfigurationsbeispiele, Formeln, unveränderliche Commit-/CI-Verweise
++und ursprüngliche Messwerttabellen sind gemeinsame technische Nachweise. Eine
++Übersetzung stellt keinen neuen Testlauf dar. Versionsbezogene Zahlen bleiben
++dem damaligen Quellstand zugeordnet. Aktuelles steht im
++[Prüfstatus](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/extension-validation.md#deutsch).
++
++Die [erste Sicherheitsprüfung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-safety-review.md#deutsch)
++und die [Strategieentscheidung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-overlap-policy.md#deutsch)
++sind historisch. Ihre Aussagen „noch nicht implementiert“ oder „Schema nicht
++unterstützt“ sind keine heutige Installationsanweisung. Die
++[zusammengefasste PR-Beschreibung](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/architecture/pump-aware-pwm-pr.md#deutsch)
++ist ein Entwurf, kein eröffneter Upstream-PR. Private Anlagenverläufe werden
++nicht in dieser öffentlichen Doku veröffentlicht.
++
++Ergänzungen an Originalseiten bleiben englisch. Vorbereitete englische
++Ergänzungen für das Original-Wiki liegen im Dokumentationspaket dieses Releases;
++das bedeutet noch keine Annahme durch Upstream. Dokuänderungen werden über
++Notizen und Anhänge dem bestehenden Preview-Release zugeordnet. Der bereits
++installierte Software-Tag wird nicht verschoben.
++Details stehen unter [Wiki-Patch, Vorschauseiten und Veröffentlichungsstatus](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/wiki-additions/README.md#deutsch).
+diff --git a/Home.md b/Home.md
+index 9008bea..4495ea6 100644
+--- a/Home.md
++++ b/Home.md
+@@ -1,5 +1,20 @@
+ # Adaptive Climate Documentation
+ 
++<!-- pump-aware-fork-preview:start -->
++## Optional fork extension documentation
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++An opt-in pump-aware HEAT PWM preview is developed separately from upstream.
++It coordinates genuine zone pulses on one shared electrically OR-controlled
++pump; it does not own the pump relay or infer physical flow. The fork also
++contains narrow learning/startup corrections. Original project features and
++fork previews must be distinguished when choosing a HACS repository or YAML.
++
++See [Fork Extensions](Fork-Extensions) for English/German guides, current
++configuration, version history, diagnostics, test plans and rollback.
++<!-- pump-aware-fork-preview:end -->
++
+ Welcome to the comprehensive documentation for **Adaptive Climate** (v0.47.0) - an advanced Home Assistant thermostat integration featuring PID control with automatic tuning, adaptive learning, multi-zone coordination, and energy optimization.
+ 
+ ## Quick Links
+diff --git a/Installation-&-Setup.md b/Installation-&-Setup.md
+index a364758..6345df1 100644
+--- a/Installation-&-Setup.md
++++ b/Installation-&-Setup.md
+@@ -1,5 +1,25 @@
+ # Installation & Setup
+ 
++<!-- pump-aware-fork-preview:start -->
++## Optional fork preview installation
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++The pump-aware preview is not obtained by installing the upstream default
++branch. Use the explicitly tagged prerelease of the personal fork, preserving
++backups of integration files, YAML and learning storage. Keep the domain
++`adaptive_climate`; never install two copies of that domain. The fork's `main`
++is the upstream baseline, while preview development uses `codex/pump-aware-pwm`.
++
++Before a supervised upgrade, turn participating thermostats OFF and verify
++their helper/switch outputs and downstream relays OFF. Install the selected
++fork prerelease in HACS, restart HA and resume HEAT. The first journal-free
++upgrade cannot reconstruct earlier delivery; observe existing minimum-OFF
++protection. Existing journal-aware upgrades retain compatible stored budgets.
++Do not delete learning data, rename working helpers or run old standalone
++patch scripts. Follow the [fork guide](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pump-aware-pwm.md#english) for activation and rollback.
++<!-- pump-aware-fork-preview:end -->
++
+ Complete guide to installing and configuring Adaptive Climate (v0.47.0) for the first time.
+ 
+ ## Prerequisites
+diff --git a/Multi-Zone-Coordination.md b/Multi-Zone-Coordination.md
+index 173f5d8..2e313c3 100644
+--- a/Multi-Zone-Coordination.md
++++ b/Multi-Zone-Coordination.md
+@@ -1,5 +1,35 @@
+ # Multi-Zone Coordination
+ 
++<!-- pump-aware-fork-preview:start -->
++## Optional pump-aware HEAT PWM coordination
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++The fork preview adds phase coordination for genuine heating pulses sharing
++one electrically OR-controlled pump. It changes actuator timing, not the
++central heat-source controller, physical pump RPM or hydraulic flow. It is
++disabled by default and does not silently coordinate unconfigured zones.
++
++- `minimal`: reduce avoidable group starts first; then prefer short genuine
++  handovers and solo time for the highest-weight zone. Longer energized pump
++  time is accepted. Necessary long overlaps favor smaller zones.
++- `maximal`: concentrate ordinary pulse starts and requested ON time. This can
++  reduce energized time but increase starts compared with a continuous workload.
++- Genuine effective target changes and OFF-to-HEAT are evaluated immediately,
++  subject to existing demand/credit and minimum-time protection. Ordinary PID
++  ticks do not gain priority. No heat may be invented to fill a pump gap.
++
++Preview 8 repairs executable minimal handovers using signed remaining budgets,
++committed ON time, minimum-OFF bounds, original deadlines and advisory next
++budget opportunities. Active/priority starts stay fixed, one ordinary start
++per zone/epoch remains enforced and future forecasts never authorize ON.
++Actual eligibility and output state are rechecked through HeaterController.
++
++See [Fork Extensions](Fork-Extensions), the [configuration guide](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pump-aware-pwm.md#english)
++and [current handover test plan](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#english). A target electrical overlap
++is not proof of open valves, minimum flow or physical pump continuity.
++<!-- pump-aware-fork-preview:end -->
++
+ Adaptive Climate provides sophisticated coordination between multiple zones to optimize comfort and efficiency in multi-zone heating/cooling systems. The coordination system consists of six key components: central heat source control, mode synchronization, zone demand tracking, thermal coupling, manifold transport delay tracking, and automatic mode switching.
+ 
+ ## Architecture
+diff --git a/Sensors-&-Monitoring.md b/Sensors-&-Monitoring.md
+index 681bed0..978d074 100644
+--- a/Sensors-&-Monitoring.md
++++ b/Sensors-&-Monitoring.md
+@@ -1,5 +1,31 @@
+ # Sensors & Monitoring
+ 
++<!-- pump-aware-fork-preview:start -->
++## Fork preview: coordinated PWM diagnostics
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++Participating climate entities expose a `pwm_coordination` attribute. These
++are scheduling/accounting diagnostics, not a physical pump or flow sensor.
++
++| Fields | Interpretation |
++| --- | --- |
++| `mode`, `reason`, `overlap_strategy`, `generation` | Group ownership, fallback and plan lifecycle |
++| `requested_seconds`, `observed_on_seconds`, `remaining_credit_seconds`, `cancelled_balance_seconds` | Signed balance: requested = observed + remaining credit + cancelled |
++| `last_start_epoch`, `last_ordinary_start_epoch`, `suppressed_ordinary_starts` | Actual/ordinary start allowance; suppression counts are not hardware command counts |
++| `priority_start_count`, latency/blocking fields | Immediate eligible target/mode response and minimum-OFF blocking |
++| `restart_uncertain_seconds` | Uncertain reserved budget, not verified offline runtime |
++| `estimated_pump_starts`, energized/overlap counters | Estimates from observed configured output states in the current registry session |
++| `projected_cyclic_starts`, `projected_high_weight_overlap_seconds` | Ideal steady-state cyclic projections |
++| `runtime_projected_starts`, `runtime_start_in_seconds`, `runtime_plan_reason` | Remaining executable plan including advisory future opportunities |
++
++`unmet_debt_seconds` is only the positive part of signed remaining credit.
++Zero does not prove a zero balance. Zone ledgers and some counters survive
++restart; group estimates/generation begin a new registry session. For helper
++outputs, ON/OFF observations refer to the helper, not the downstream relay.
++See the [diagnostic definitions and test plan](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#english).
++<!-- pump-aware-fork-preview:end -->
++
+ The Adaptive Climate provides comprehensive monitoring through sensors, entity attributes, and reporting services.
+ 
+ ## Performance Sensors (Per Zone)
+diff --git a/Troubleshooting.md b/Troubleshooting.md
+index a2bf1ab..9616713 100644
+--- a/Troubleshooting.md
++++ b/Troubleshooting.md
+@@ -1,5 +1,35 @@
+ # Troubleshooting
+ 
++<!-- pump-aware-fork-preview:start -->
++## Fork preview: PWM handover and restart checklist
++
++**Fork preview, not an upstream release feature.** The following information applies to `filou01/ha-adaptive-climate`, branch `codex/pump-aware-pwm`, [preview v0.67.1-pwm.8](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.8). Do not assume the upstream release supports this configuration.
++
++1. Confirm the installed fork prerelease, active group ownership and intended
++   strategy. New `runtime_*` fields identify the executable planning path.
++2. Compare actual output edges, not only ideal cyclic projections. A configured
++   handover is conditional on real demand, valid budget, start allowance,
++   minimum times and successful output-state confirmation.
++3. An idle zone with positive PID output is not necessarily owed another pulse:
++   inspect signed credit, ordinary epoch quota and low-duty accumulation. A
++   completed ordinary pulse must not restart on small PID fluctuations alone.
++4. `restart_state_invalid` requires checking configuration identity, journal
++   consistency and wall time. `restart_storage_error` blocks unjournaled ON.
++   Preserve backups and investigate; do not delete the entire learning store
++   or repeatedly restart to hide a fault.
++5. A `Large dt discrepancy` warning compares control-call and sensor-update
++   intervals; it alone proves neither a PID integration defect nor fallback.
++   Missing contact entities at startup should be checked again once integrations
++   are ready; an actually unavailable contact needs separate investigation.
++6. Helper availability does not confirm a panel relay or flow. Inspect available
++   downstream feedback and never add heat solely to improve a pump metric.
++
++Startup-only success is not a completed heating/handover test. Follow the
++[supervised installation test plan](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/pwm-runtime-handovers.md#english) and
++[current validation limits](https://github.com/filou01/ha-adaptive-climate/blob/codex/pump-aware-pwm/docs/extension-validation.md#english). To return to independent scheduling,
++disable coordination and restart; general learning/startup fixes remain active.
++<!-- pump-aware-fork-preview:end -->
++
+ This guide helps diagnose and resolve common issues with the Adaptive Climate.
+ 
+ ## Diagnostic Checklist

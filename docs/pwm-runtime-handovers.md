@@ -1,11 +1,15 @@
 # Executable minimal-overlap handovers — preview 8
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](fork-extensions.md)
+
+## English
+
 `v0.67.1-pwm.8` repairs avoidable group OFF gaps when nominal cyclic phases
 do not describe executable pulses. The `minimal` strategy remains intentional:
 fewer group starts first, then short genuine handovers and high-weight solo
 time. It does not change to concentrated/maximal overlap.
 
-## Root cause and reproduced failures
+### Root cause and reproduced failures
 
 Previously the cyclic planner received nominal `allocation`, while execution
 used signed remaining credit, minimum times and period start allowances.
@@ -33,7 +37,7 @@ These are controlled software counterexamples. They are not a complete replay
 of the installation's changing temperature/PID history. If genuine demand
 disappears before a planned transition, a group gap may be unavoidable.
 
-## Implementation and limits
+### Implementation and limits
 
 The cyclic planner still supplies steady-state phases and next-budget timing.
 A separate pure `pwm_runtime_planner.py` receives one absolute window per zone:
@@ -67,7 +71,7 @@ ledger or restart schema changes, learning reset, PID gain change, outside-term
 change or configuration migration is introduced. Repaired starts are transient
 plans, reconstructed after restart from the existing durable budgets/deadlines.
 
-## Diagnostics
+### Diagnostics
 
 | Field in `pwm_coordination` | Meaning |
 | --- | --- |
@@ -80,7 +84,7 @@ remain **ideal steady-state cyclic** metrics. Observed `estimated_pump_starts`
 and energized/overlap counters continue to use actual configured output states.
 Neither projected metric proves a physical pump or hydraulic transition.
 
-## Automated test plan and acceptance
+### Automated test plan and acceptance
 
 New tests live in `tests/test_pwm_runtime_handover.py`.
 
@@ -134,7 +138,7 @@ suites must also pass. The observed-epoch attribution test explicitly disables
 optional ordinary deferral so it continues to isolate edge attribution rather
 than prescribe a phase placement that this fix is intended to optimize.
 
-### Validation evidence
+#### Validation evidence
 
 Before-fix reproduction: **3 failed**, matching all three original gaps.
 Tested source/test commit: `206ad4f430e5957a68a3cc120f62e539f401896d`.
@@ -166,7 +170,7 @@ performance/SD-write/save-latency measurements and wiki publication. Existing
 temperature-dependent outside-term switching and broader maintenance-learning
 behavior are unchanged. No claim that every historical live gap is avoidable.
 
-## Supervised installation test plan
+### Supervised installation test plan
 
 1. Preserve integration/configuration/learning backups and record preview 7 for
    rollback. For the monitored upgrade set participating thermostats OFF and
@@ -192,7 +196,7 @@ behavior are unchanged. No claim that every historical live gap is avoidable.
 These are a deployment test plan, not tests already performed in the user's HA.
 No automatic HA installation or restart is part of publishing this release.
 
-## Rollback and changed files
+### Rollback and changed files
 
 Disable coordination and restart for the existing independent path, or reinstall
 preview 7 and restart. Existing YAML, learner data and PWM journal v1 remain
@@ -207,3 +211,148 @@ Do not erase learning or signed budgets to conceal a planning problem.
 - Shared simulation adapter: expose its minimum-ON contract.
 - One existing attribution test: isolate its original focus with zero deferral.
 - README, user guide and combined PR description: preview 8 documentation.
+
+## Deutsch
+
+### Aktuelles Verhalten von Preview 8
+
+`v0.67.1-pwm.8` schließt vermeidbare Lücken einer minimal überlappenden Laufkette.
+`minimal` ist weiterhin die bewusst gewählte Strategie: zuerst weniger
+Pumpenstarts, danach ausreichend kurze echte Übergaben und möglichst viel
+Alleinlauf der höher gewichteten Zone. Es wird nicht auf `maximal` gewechselt.
+
+Der bisherige zyklische Plan verwendete nominelle Pulsbudgets. Restguthaben,
+bereits gelieferte Sekunden, Mindestzeiten und verbrauchte Startfreigaben wurden
+erst in der Ausführung berücksichtigt. Dadurch konnte eine rechnerische Kette
+praktisch auseinanderfallen. Ein nach seinem Slot neu auftretender gewöhnlicher
+Bedarf startete sofort, selbst kurz vor einem nutzbaren Nachbarpuls.
+
+### Reproduzierte Fehler und Korrektur
+
+Die drei unveränderten neuen Regressionstests scheiterten vor dem Fix:
+
+| Fall | Vorher | Zulässiger reparierter Plan |
+| --- | --- | --- |
+| A nominal 1200s, davon 600s bereits durch Mehrlaufzeit verrechnet; B 900s | A 0–600, B 960–1860: 360s Lücke | A 0–600, B 360–1260: 240s Übergabe |
+| A 1200s; B 900s, frühestens bei 1500s zulässig | A 0–1200, B 1500–2400: 300s Lücke | A 540–1740, B 1500–2400 |
+| B fordert 600s bei t=2990 an, A nächste Freigabe 3600 | B 2990–3590: 10s Lücke | B 3240–3840: 240s Übergabe |
+
+Periode und maximale gewöhnliche Verschiebung betragen 3600 Sekunden, das
+Übergabeziel 240 Sekunden. Mindest-ON ist 600 Sekunden, Mindest-AUS ebenfalls
+600 außer B mit ausdrücklich modellierten 1600 Sekunden im zweiten Fall.
+Die Vergleichspläne liefern identische ON-Zeiten, halten Mindestzeiten und
+höchstens einen gewöhnlichen Start je Zone/Epoche ein. Die Fälle sind
+kontrollierte Softwarebeweise, kein vollständiges Replay eines realen Tages.
+Entfallender Bedarf kann eine ursprünglich mögliche Übergabe verhindern.
+
+### Ausführbare Intervalle statt bloßer Phasen
+
+Ein eigener reiner Planer erhält je Zone höchstens ein absolutes Intervall:
+
+- Bereits laufendes ON ist fest, einschließlich Restguthaben und verbleibender
+  Mindestlaufzeit. Ein 1ms-Marker bildet ausschließlich die noch vorhandene
+  ON-Kante im selben Steueraufruf ab; er verlängert keinen Heizbefehl.
+- Gewöhnliche ungestartete Reservierungen dürfen sich nur zwischen echter
+  Mindest-AUS-Freigabe, ursprünglicher Deadline und geltender Perioden-/
+  Budgetgrenze bewegen. Echte Mindest-ON-Dauer wird berücksichtigt.
+- Eine geschlossene weiterhin zulässige Nachbarzone kann mit ihrer nächsten
+  Budgetphase als Prognose im Folgefenster dienen. Daraus entstehen weder
+  neue Zeitgutschrift noch eine zusätzliche Freigabe oder bedingungsloses ON.
+- Priorität und direkter 100-Prozent-Bedarf bleiben auf der ersten sicheren
+  Startmöglichkeit fest. Aktive Ventile werden nicht zur Ausrichtung getaktet.
+
+Zwei deterministische lokale Durchgänge prüfen Übergabepunkte, bisherige
+Startzeiten und früheste Freigaben. Bewertet werden in dieser Reihenfolge:
+gemeinsame Starts, erfüllbare Übergabeunterschreitung, Überschneidung mit der
+höher gewichteten Zone, gewichtete Gesamtüberschneidung und Planbewegung.
+Kleine Zonen werden zuerst verschoben. Höchstens 16 Intervalle und O(n^4)
+begrenzen den Aufwand; ein globales kombinatorisches Optimum wird nicht
+behauptet. Prognosen können durch neue Daten ungültig werden.
+
+Alle Befehle laufen weiter über den vorhandenen serialisierten Controller,
+Journalprüfungen, Zustandsbestätigung und Invalidierung. Bilanz, Journal-
+Schema, Lerndaten, PID-Werte und YAML bleiben unverändert. Nach Neustart werden
+Reparaturpläne aus den bestehenden dauerhaften Budgets und Fristen neu gebildet.
+`maximal` behält seine bisherige Platzierung.
+
+### Diagnose
+
+| Feld | Bedeutung |
+| --- | --- |
+| `runtime_projected_starts` | Zusammenhängende Komponenten des verbleibenden absoluten Plans einschließlich Prognosen; kein gemessener Tageszähler |
+| `runtime_start_in_seconds` | Geplanter Startabstand einer aktuellen Reservierung; null ohne wartenden Start oder bei bereits ON |
+| `runtime_plan_reason` | Slot, Übergabewarten/-vorziehen, bereits ON, Priorität/Dauerbedarf, kein reservierter Bedarf oder Freigabe-/Bilanzgrenze |
+
+Die genauen englischen Reason-Kennungen stehen in der gemeinsamen Tabelle oben.
+`projected_cyclic_starts` und `projected_high_weight_overlap_seconds` bleiben
+ideale zyklische Werte. Tatsächliche Gruppen-/Laufzeit-/Überlappungsschätzungen
+folgen den beobachteten Ausgangszuständen. Keine Projektion beweist Pumpen-
+oder Ventilstellung, Durchfluss oder Wärmelieferung.
+
+### Automatisierter Testplan und Ergebnisse
+
+`tests/test_pwm_runtime_handover.py` prüft die drei Fehlerfälle, echte HA-
+Adapter-/Controllergrenzen für Switch und Helfer, Sofortpriorität in beiden
+Strategien, Maximal-Kompatibilität, unverrückbare Deadline, Bedarfsentzug,
+veraltete Timer, zurückgezogene Zukunftsprognosen, ON vor OFF im selben Aufruf,
+verkürztes laufendes Budget und 20 deterministische 16-Zonen-Konstellationen.
+Dauern und Grenzen bleiben unverändert, feste Intervalle werden nicht
+verschoben, das Bewertungsergebnis verschlechtert sich nicht. Ungültige
+numerische Übergabeziele werden abgewiesen. Ein Tagesvergleich kontrolliert
+echte Ausgangskanten, Freigaben, Zeitbilanz und Restguthaben.
+
+Im zusätzlichen 24-Stunden-Modell mit 1800 Sekunden Nachlauf sinken Starts von
+49 auf 25. Beide Läufe liefern 30000 und 14400 elektrische Sekunden je Zone;
+Endguthaben jeweils null, höchstens ein gewöhnlicher Start je Epoche.
+Die höher gewichtete Zone überlappt nach Reparatur insgesamt 5760 Sekunden,
+vorher null: Die notwendigen vierminütigen Übergaben folgen der Priorität
+„weniger Starts vor maximalem Alleinlauf“. Die Vergleichsbasis ist derselbe
+Gruppenruntime ohne Reparatur, nicht unabhängige Upstream-PWM. Es gibt keine
+thermische Rückkopplung oder physische Aktor-/Netzsimulation.
+
+Geprüfter Source-/Test-Commit ist
+`206ad4f430e5957a68a3cc120f62e539f401896d`; das Release ergänzt nur Dokumentation.
+37 neue Tests und alle 271 `test_pwm*.py`-Fälle bestanden lokal. Linux 3.11 und
+3.12 auf GitHub: jeweils 3719 bestanden, 11 übersprungen, Exit 0. Ruff,
+Formatierung, Pyright, HACS und hassfest bestanden. Windows: 3707 bestanden,
+11 übersprungen, zwölf Fehler; beim unveränderten Vorgänger identische zwölf
+Fehlernamen: elf bekannte Datumsformatierungen und ein realzeitabhängiger
+Undershoot-Test, der einzeln besteht. Keine dieser fremden Ursachen wurde
+verändert. Vollständige Matrizen, Befehle und unveränderliche CI-Links stehen
+im englischen Teil und gelten auch für diese Übersetzung.
+
+Reale Geräte-End-to-End-Validierung, physische Relais-/Pumpen-/Durchflussprüfung,
+überwachter Tagesbetrieb, Stromausfall-/OS-Cache-Tests und Raspberry-Pi-/
+SD-/Save-Latenzmessungen sind nicht durchgeführt. Die später separat geprüfte
+HA-Startbereitschaft ist kein Ersatz für echte Heizzyklen. PID-Außenanteil und
+das größere Maintenance-Lernthema bleiben unverändert. Nicht jede reale Lücke
+ist vermeidbar.
+
+### Überwachter Anlagentest
+
+1. Backup von Integration, Konfiguration und Lernspeicher aufbewahren und die
+   vorherige Version notieren. Thermostate OFF setzen und Ausgänge OFF prüfen.
+   Preview 8 in HACS installieren, HA neu starten, HEAT fortsetzen. Die
+   `minimal`-Konfiguration und Gewichte bleiben bestehen.
+2. `mode: active`, richtige Strategie und keinen Rückfall prüfen. Echte
+   Helfer-/Switch-Kanten, angeforderte/beobachtete/abgeschlossene Sekunden,
+   signiertes Restguthaben, Epochen und neue Diagnosefelder aufzeichnen.
+3. Gewöhnliche Pulse mit negativem Restguthaben und Mindestzeiten beobachten.
+   Wo möglich muss die nächste Zone an die tatsächliche Restlaufzeit oder eine
+   erlaubte Folgephase anschließen. Mindest-AUS allein darf keinen weiteren
+   gewöhnlichen Start erlauben.
+4. Echten Zielwechsel und OFF→HEAT getrennt testen. Ein zulässiger echter Puls
+   startet sofort oder zur ersten durch Mindest-AUS erlaubten Zeit, nicht erst
+   zu einer optimierten Übergabe. Prioritätszähler prüfen.
+5. Wartenden Bedarf zurückziehen oder pausieren: kein veraltetes ON. Einen
+   über die Periodengrenze laufenden Puls prüfen: kein künstliches OFF/ON.
+6. Mindestens einen vollständigen Tag mit Ausgangsverlauf und Raumkomfort
+   vergleichen. Unvermeidbare Lücken samt Bedarfsänderung dokumentieren.
+   Bei Helfern nachgelagerte Relaisrückmeldung gesondert prüfen.
+
+Das ist ein Prüfplan, kein bereits abgeschlossener physischer Versuch.
+Veröffentlichung dieser Doku installiert oder startet HA nicht automatisch.
+Rollback: Koordination deaktivieren und neu starten oder Preview 7 erneut
+installieren. YAML, Lernspeicher und Journal v1 bleiben kompatibel; Preview 7
+bringt die nachgewiesenen nominalen Planungslücken zurück. Keine Lerndaten
+oder Restbudgets zum Verbergen eines Fehlers löschen.

@@ -1,10 +1,16 @@
 # Ordinary PWM start entitlement — preview 7
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](fork-extensions.md)
+
+> **Scope / Geltungsbereich:** Historical release/design record; use the [current documentation index](fork-extensions.md) for preview 8. Historischer Versions-/Designbericht; aktuelle Bedienung und Nachweise stehen im Erweiterungsindex. Original test tables and commit/CI references apply to both language sections and retain their original revision context.
+
+## English
+
 `v0.67.1-pwm.7` fixes repeated ordinary OFF→ON transitions within a coordinated
 PWM period. It includes the preview-6 restart journal and all earlier fixes.
 Coordination remains opt-in; existing YAML and heater services are unchanged.
 
-## Reproduction and root cause
+### Reproduction and root cause
 
 The regression was reproduced against unmodified preview-6 source with real
 controllers/HA adapters, for both switch and input_boolean outputs. With a
@@ -26,7 +32,7 @@ Inspection also found two related paths requiring protection:
 - Simply clipping positive post-pulse revisions while retaining all negative
   revisions creates a false debt ratchet under alternating PID fluctuations.
 
-## Behavior
+### Behavior
 
 Logical periods use the existing stable group origin, not a rolling cooldown:
 
@@ -69,7 +75,7 @@ change the target/mode signature and are not priority events. Thus the once-per-
 period ordinary rule does not promise one total start if real priority events
 or a direct-100% transition occur.
 
-## Restart and journal compatibility
+### Restart and journal compatibility
 
 The version-1 PWM journal gains optional fields for `last_start_epoch`,
 `last_ordinary_start_epoch`, `allocation_started`, `pending_start_epoch` and
@@ -94,7 +100,7 @@ checkpoint still blocks unjournaled ON and requests safety OFF through
 `HeaterController`. Independent/disabled/unsupported fallback retains legacy
 timing; the new rule applies while the coordinated group owns the output.
 
-## Diagnostics
+### Diagnostics
 
 | Field | Meaning |
 | --- | --- |
@@ -116,7 +122,7 @@ pulse; it is not simply undelivered positive heat. Helper-state times remain
 proxies, not physical relay/flow feedback. Existing restart uncertainty fields
 retain [their documented meaning](pwm-restart-safety.md).
 
-## Verification
+### Verification
 
 Tested source/test commit: `eb3062d2bebaf3ce9436872095dfbce105a85b8a`.
 The release adds documentation to that identical source/test tree.
@@ -167,7 +173,7 @@ do not prove physical heating delivery or reproduce every trigger in the live
 diagnostic snapshots. The broader maintenance-learning case from issue #6 and
 the separate dt discrepancy diagnostic remain unchanged.
 
-## Changed files, upgrade and rollback
+### Changed files, upgrade and rollback
 
 - `managers/pwm_load_balancing_manager.py`: stable epoch/allocation gates,
   confirmed-edge and write-ahead tracking, closed-budget accounting, diagnostics.
@@ -194,3 +200,110 @@ Disable coordination and restart for independent control. Reinstalling unchanged
 preview 6 is data-compatible with the additive fields, but it ignores the quota
 and reintroduces the repeated-pulse bug; it also drops the new fields on its next
 save. Keep the pre-upgrade backup. No upstream PR/issue/comment is opened.
+
+## Deutsch
+
+### Fehlerbild und Ursache
+
+Preview 7 begrenzt gewöhnliche OFF→ON-Starts auf eine Berechtigung je Zone und
+logischer Gruppenperiode. Es enthält die Neustartjournale und alle vorherigen
+Korrekturen. Die bisherige YAML-Konfiguration bleibt gültig.
+
+Vor dem Fix wurde der Fehler für Switch und Helfer mit echten Controller-/
+Adaptergrenzen reproduziert: Bei 3600 Sekunden Periode, 600 Sekunden Mindest-
+ON/AUS und 120 Sekunden Ventilfahrt ergibt 21,8 Prozent einen elektrischen Puls
+von 844,8 Sekunden. Nach dessen Ende erzeugt 21,9 Prozent nur 3,6 Sekunden mehr
+Guthaben, konnte aber nach Mindest-AUS erneut einen vollen Mindestpuls starten.
+Beide Regressionstests zeigten zwei statt eines Starts. Positives Zeitguthaben
+war fälschlich zugleich als neue Startberechtigung verwendet worden.
+
+Weitere Schutzlücken betrafen eine veraltete Phasenfrist innerhalb derselben
+Epoche sowie künstlich anwachsende negative Schuld, wenn nach Pulsende nur
+positive PID-Korrekturen abgeschnitten, negative dagegen beibehalten werden.
+
+### Verhalten und Ausnahmen
+
+Die Epoche verwendet den stabilen Gruppenursprung, keinen rollenden Stunden-
+Cooldown:
+
+```text
+epoch = floor((monotonic_now - group_origin) / PWM_period)
+```
+
+Jede beobachtete OFF→ON-Kante verbraucht die gewöhnliche Freigabe ihrer
+tatsächlichen Epoche. Zusätzlich wird getrennt gespeichert, ob das aktuelle
+zusammenhängende Pulsbudget schon begonnen hat. Ein beendetes altes Budget
+darf auch nach einer globalen Grenze nicht erneut anlaufen, während es auf
+die nächste rechtmäßige Phase wartet. Durchgehendes ON wird nicht unterbrochen.
+
+Gewöhnliches Einschalten benötigt unbenutzte Periodenfreigabe und ungestartetes
+Budget. PID-Änderungen, andere Zonen, Replanning, Timer oder Mindest-AUS-Ablauf
+erzeugen keine neue Berechtigung. Abgewiesene/fehlgeschlagene Starts verbrauchen
+keine Freigabe. Zustand und Freigabe werden nach wartender Speicher-I/O erneut
+gelesen; währenddessen beobachtete Ausgangskanten verbrauchen sie ebenfalls.
+
+Während ON darf sich die zusammenhängende Restdauer ändern. Nach Pulsende
+werden normale PID-Korrekturen beider Vorzeichen in der vorzeichenbehafteten
+Abschlussbilanz verrechnet. Daraus entstehen weder Nachhol-Minipulse noch
+erfundene Negativschuld. Echte Mehrlaufzeit durch Mindest-ON bleibt negativ
+erhalten. Niedriglastguthaben kann weiter verdient werden, ohne mehrfach eine
+bereits verbrauchte Periode mit Mindestpulsen zu belasten.
+
+Echte wirksame Zieländerungen einschließlich Zeitplan/Preset sowie OFF→HEAT
+bleiben Prioritätsausnahmen unter echten Bedarfs- und Mindestzeitgrenzen. Ein
+Prioritätspuls verbraucht ebenfalls die gewöhnliche Freigabe. Direkter
+100-Prozent-Bedarf bleibt durchgängig. Die Regel verspricht daher nicht genau
+einen gesamten Start bei zusätzlichen legitimen Prioritätsereignissen.
+
+### Neustart und Diagnose
+
+Journal v1 erhält optionale Felder `last_start_epoch`,
+`last_ordinary_start_epoch`, `allocation_started`, `pending_start_epoch` und
+`suppressed_ordinary_starts`. Store-/Lerner-Version und Lernhistorie werden nicht
+zurückgesetzt. Ein ungewisser ON-Befehl kann seine mögliche Epoche verbrauchen.
+Ist ungewisses ON bei Wiederherstellung vorhanden, darf nach Sicherheits-OFF
+nicht allein wegen abgelaufener Mindest-AUS wieder gewöhnlich ON folgen.
+
+Alte Preview-6-Journale werden aus bekannten Ausgangs-/Lieferdaten konservativ
+interpretiert. Eine mehrdeutige OFF-Kante nach einem über die Grenze laufenden
+Puls kann die Recovery-Periode mitverbrauchen; eine gewöhnliche Periode
+Minderlieferung ist dann möglich. Es wird kein künstlicher Ausgleichspuls
+erzeugt. Fehlerhafte Freigabefelder führen zu `restart_state_invalid`.
+Speicherfehler blockieren unjournalisiertes ON unverändert.
+
+Die Diagnosetabelle und Bilanzgleichung im englischen Teil gelten für beide
+Sprachen. `suppressed_ordinary_starts` zählt verrechnete positive Korrekturen,
+keine tatsächlich gesendeten Gerätebefehle. `remaining_credit_seconds` und
+`cancelled_balance_seconds` sind vorzeichenbehaftet. `unmet_debt_seconds: 0`
+beweist nicht, dass das Restguthaben exakt null ist. Helferzeiten bleiben
+Stellvertreter für elektrische Anforderung, kein hydraulischer Nachweis.
+
+### Historische Prüfung und Rollout
+
+Quell-/Teststand: `eb3062d2bebaf3ce9436872095dfbce105a85b8a`.
+Die Originalmatrix oben dokumentiert 54 neue Windows-Fälle, Linux 3.11/3.12
+jeweils 3682 bestanden und 11 übersprungen, Ruff/Format/Pyright sowie GitHub,
+HACS und hassfest erfolgreich. Windows 3.14.5 vollständig: 3671 bestanden,
+11 übersprungen, elf bestehende Datumsformatierungsfehler.
+
+Zwei neue Tagesmodelle mit vier Zonen, 600 Sekunden Mindest-ON/AUS und kleinen
+PID-Schwankungen liefern in beiden Strategien je Zone 24 gewöhnliche Starts
+und zusammen 24 Gruppenstarts. Die elektrischen Sekunden sind in beiden Modi
+18835,2 / 17280 / 17280 / 17280. Überschneidung mit der höher gewichteten Zone:
+5760 Sekunden bei minimal, 17280 bei maximal. Alle Bilanzen stimmen, kein
+positiver Endrückstand. Die ursprünglichen acht Vergleichs- und vier
+Neustart-Tagesmodelle bleiben enthalten.
+
+Reale HA-/Geräte-End-to-End-Prüfung, physische Panel-/Relais-/Pumpen-/
+Durchflussprüfungen, Stromausfall-/OS-Cache-Tests, überwachter Tagesbetrieb,
+Raspberry-Pi-/SD-/Speicherlatenzmessung und Wiki-Veröffentlichung waren damals
+nicht durchgeführt. Das größere Maintenance-Lernthema und dt-Diagnostik
+bleiben außerhalb dieses Fixes.
+
+Vor dem überwachten Upgrade Backup erstellen, beteiligte Thermostate/Ausgänge
+OFF prüfen, Vorabversion installieren, neu starten und HEAT fortsetzen. Für
+die Kontrolle nach einem beendeten Puls kleine PID-Änderungen beobachten: Kein
+zweiter gewöhnlicher ON darf folgen. Echte Ziel-/Moduswechsel separat prüfen.
+Preview 6 kann die additiven Daten lesen, ignoriert beim Rollback aber die
+Freigaberegel, bringt den Fehler zurück und lässt neue Felder beim Speichern
+weg. Für unabhängige Steuerung deaktivieren und neu starten; Backup behalten.

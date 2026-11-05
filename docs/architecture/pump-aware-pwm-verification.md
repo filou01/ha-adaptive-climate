@@ -1,4 +1,11 @@
 > Historical report for `v0.67.1-pwm.1`. For preview 2 hotfix scope and current
+
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](../fork-extensions.md)
+
+> **Scope / Geltungsbereich:** Historical release/design record; use the [current documentation index](../fork-extensions.md) for preview 8. Historischer Versions-/Designbericht; aktuelle Bedienung und Nachweise stehen im Erweiterungsindex. Original test tables and commit/CI references apply to both language sections and retain their original revision context.
+
+## English
+
 > full-suite/CI results, see [the hotfix report](../learning-hotfixes.md).
 
 # Pump-aware PWM verification
@@ -12,7 +19,7 @@ counterexamples. They now run as ordinary passing regression tests of the
 opt-in actuation path, not expected failures. The historical review's
 unimplemented-status statements do not describe this later implementation.
 
-## Architecture
+### Architecture
 
 - `pwm_coordination_config.py`: strict standalone schema, disabled default,
   strategy/weight validation and duplicate group-member rejection.
@@ -40,7 +47,7 @@ There is no persistence of plan phases, monotonic deadlines or debt and no
 adaptive-learning storage migration. Restart reconstructs readiness/state;
 unknown elapsed ON time conservatively disengages coordination.
 
-## Reproduction
+### Reproduction
 
 Install `requirements-test.txt`, Ruff and Pyright in a virtual environment.
 Then run:
@@ -58,7 +65,7 @@ Raw local logs are in the excluded `validation/` directory. The fork's
 `PWM validation` workflow runs the full suite, lint, formatting and types on
 Linux Python 3.11 and 3.12 with repository contents read permission only.
 
-## Immediate-demand coverage
+### Immediate-demand coverage
 
 This mapping identifies software coverage, not physical HA/hardware approval.
 The protocol runtime and actual heater/adapter boundaries are tested separately.
@@ -87,7 +94,7 @@ per-zone duration, deterministic results, invalid numbers/schema, effective
 valve/minimum timing, real controller dispatch, late callbacks, shared outputs,
 rename/removal, shutdown, low credit and failed commands.
 
-## 24-hour simulations
+### 24-hour simulations
 
 Eight deterministic replays compare the actual legacy `PWMController` with
 the production group runtime: two strategies × two workloads × fixed/interactive
@@ -139,7 +146,7 @@ Maximal deferral is zero for these fixtures. Runtime per 24h replay was about
 0.2–0.4 host CPU seconds; Raspberry Pi performance is NOT RUN. All counters
 are estimates from configured electrical outputs, not measured pump feedback.
 
-## Validation status and limits
+### Validation status and limits
 
 The final release notes record exact commands, counts, commit and CI links.
 Do not infer hardware approval from a passing simulation or repository check.
@@ -181,7 +188,7 @@ cache-path permissions; test collection and execution are otherwise unchanged.
 Read [configuration, compatibility and rollback](../pump-aware-pwm.md) before
 installing a preview. No production configuration is changed by these files.
 
-## Changed files
+### Changed files
 
 ```text
 .github/workflows/pwm-validation.yml
@@ -216,3 +223,94 @@ tests/test_pwm_simulation.py
 The proposal archive, private configuration examples, original prompts, raw
 logs, test environments and interpreter downloads are excluded from commits.
 No version number, integration domain or learning-store schema is changed.
+
+## Deutsch
+
+### Historischer Implementierungsnachweis für Preview 1
+
+Dieser Bericht gehört zu `v0.67.1-pwm.1`, nicht zur aktuellen Version.
+Grundlage war Upstream `48add428ccc9d356be186f69049526a7d91116c9` (0.67.0),
+abschließender Quellstand `5fbe2b44614e10f4b574c7f897af99c9c83cdd15`.
+Spätere Preview-Versionen ergänzen Lernkorrekturen, Startserialisierung,
+Helferausgänge, Callback-Sicherheit, dauerhafte Journale, gewöhnliche
+Startberechtigungen und ausführbare Übergaben. Aussagen dieses Berichts wie
+„keine Persistenz“ beschreiben ausschließlich Preview 1.
+
+### Architektur und I01–I19
+
+Das Schema validiert Gruppen, Gewichte, Strategien und eindeutige Mitgliedschaft.
+Der reine zyklische Planer verwendet effektive elektrische Dauern. Puls-
+Reservierungen bleiben von Ausführung getrennt; beobachtete ON-Sekunden zahlen
+die Bilanz. Ein Gruppenmanager mit Protokoll-Adaptern verwaltet Reservierungen,
+Priorität, Generationen und einen widerruflichen Folgetimer. HA-Adapter binden
+echte wiederhergestellte Entities. Der Controller bietet einen serialisierten
+Befehlspfad mit expliziten Ergebnissen und Zustandsbestätigung.
+
+Fehlgeschlagene Starts dürfen kein Rohguthaben verbrauchen oder erfolgreiche
+Lern-Events vortäuschen. OFF/Pause/Sicherheit widerrufen alte Planung; ein
+bereits abgeschickter veralteter ON-Befehl muss über denselben Controller
+abgeglichen werden. Bei nicht unterstützten oder fehlerhaften Gruppen wird
+die unabhängige Kontrolle ohne künstliches gemeinsames OFF/ON zurückgegeben.
+
+Die vollständige englische I01–I19-Tabelle benennt die originalen Regressionen.
+Sie prüft unmittelbaren echten Ziel-/Modusbedarf, keine künstliche Wärme bei
+null Bedarf oder unverdientem Niedriglastguthaben, Budgetersatz statt
+Doppellieferung, Pausen, erste Mindest-AUS-Freigabe, wiederholte Änderungen,
+Periodenübertritt, veraltete Timer, Sicherheits-OFF gegen wartendes ON,
+zulässige große Zonenüberschneidung bei Priorität, gewöhnliche PID-Änderungen,
+gemeinsame Setter, bereits gebundene Pipeline-Wärme und Rückfall ohne Glitch.
+Das sind Software-/Grenztests, keine physische Geräteabnahme.
+
+### Acht ursprüngliche Tagesvergleiche
+
+Verglichen wurden dieselben effektiven Bedarfsdauern und Anfangszustände mit
+echter unabhängiger `PWMController`-Logik und Produktionsgruppenruntime:
+zwei Strategien, 80/140 Prozent Last, fest/interaktiv. Unabhängige Startphasen
+waren 0/900/1800/2700 Sekunden, Legacy-Ticks 30 Sekunden, koordinierte Timer
+exakte Simulationszeitpunkte. Ventilfahrt, Transport und Mindestzeiten waren
+in diesen Tagesmodellen null; thermische Rückkopplung und Hydraulik fehlen.
+Separate Tests deckten effektive Dauer und Schutzzeiten ab, diese Modelle
+beweisen aber keinen nächtlichen Niedriglastbetrieb mit realen Mindestzeiten.
+
+Die Original-Messwerttabellen oben gelten sprachübergreifend. Wesentliche Werte:
+
+| Modell | Unabhängige Starts | Koordinierte Starts minimal / maximal |
+| --- | ---: | ---: |
+| Fest 140 Prozent | 1 | 1 / 24 |
+| Interaktiv 140 Prozent | 19 | 4 / 24 |
+| Fest 80 Prozent | 96 | 24 / 24 |
+| Interaktiv 80 Prozent | 54 | 25 / 26 |
+
+Bei festen 80 Prozent werden je Zone genau 17280 Sekunden geliefert, ohne
+Rest-/Abschlussbilanz. Minimal hat 51840 gemeinsame ON-Sekunden, maximal 17280,
+unabhängig 69120. Das ist ein sauberer modellierter Startvergleich ohne
+unterdrückte Wärme. Feste 140 Prozent sind bei minimal durchgängig; maximal
+reduziert die Union auf 34560 Sekunden und erzeugt dafür mehr Starts.
+
+Interaktive Ereignisse: Zone 4 OFF um 06:00, HEAT um 08:17, Zielerhöhung Zone 1
+um 12:17. Beide Varianten reagieren in Simulationszeit ohne Schedulerlatenz.
+Beim interaktiven 140-Prozent-Fall unterscheiden sich abschließender
+Periodenübertrag und OFF-bedingte Stornierung. Die Zahlen dürfen deshalb nicht
+als exakte Wärmeliefer-Parität oder isolierter Einsparnachweis ausgegeben
+werden. Die vorzeichenbehafteten Bilanzdetails stehen in der englischen
+Originalauswertung. Maximale gewöhnliche Verschiebung: 2400 Sekunden bei
+minimal/140 Prozent, 1440 Sekunden bei minimal/80 Prozent, innerhalb der
+modellierten 7200-Sekunden-Grenze; maximal dort null.
+
+### Historischer Prüfstatus und Grenzen
+
+Die Originalmatrix hält Linux 3.11.18 und 3.12.3 mit jeweils 3520 bestandenen,
+elf übersprungenen Tests und sechs bestehenden Warnungen fest. Lokale Windows-
+Zieltests: 74 bestanden. Ruff/Format/Pyright und veröffentlichte GitHub-
+Matrix, HACS und hassfest bestanden zum angegebenen Quellstand. Der ältere
+Windows-Vollauf hatte elf bereits bestehende Datumsformatierungsfehler.
+Einige darunter unverändert stehen gebliebene frühere Zwischenstandsnotizen
+sind historische Aussagen, keine zusätzlichen aktuellen Testläufe.
+
+Reale HA-Instanz, physische Relais/Pumpe, überwachter hydraulischer Tagesbetrieb,
+Raspberry-Pi-Messungen und Wiki-Veröffentlichung wurden damals nicht geprüft.
+Der variable Maintenance-Tagesvergleich mit echten Mindestzeiten und
+Fehlerinjektion war nicht durchgeführt. Ein grünes Modell begründet keine
+Hardwarefreigabe. Sämtliche Befehle, Quellverweise, Tabellen, CI-Links und die
+ursprüngliche Dateiliste bleiben im englischen Abschnitt erhalten; aktuelle
+Ergebnisse stehen im [Erweiterungsindex](../fork-extensions.md#deutsch).

@@ -2,6 +2,26 @@
 
 ## Overview
 
+### Fork preview compatibility notes
+
+This analysis includes historical module sizes and payload references. In the
+fork preview, the learner payload is version 12: `cycles_since_last_adjustment`
+is retained across restarts, existing completed cycles/gains/confidence are kept,
+and a missing older counter starts conservatively at zero. Recommendation
+inspection does not consume cooldown/cycle credit; successful application does.
+Shared startup publishes one fully restored learning store before discovering
+the global learning-window entity.
+
+Transient cycle restoration and zero/tiny-output settling are corrected, but
+repeated maintenance demand at or above the existing 2% threshold can still
+keep a session active. These changes are not a general learning redesign or a
+PID outside-term change. They apply even with PWM coordination disabled.
+The additional coordinated-PWM journal uses its own version-1 group codec in
+the existing outer Store version 5; it is not a replacement for learner history.
+See [learning hotfix scope](../learning-hotfixes.md#english),
+[shared startup](../learning-startup-fix.md#english) and
+[restart accounting](../pwm-restart-safety.md#english).
+
 The adaptive learning subsystem is the intelligence layer of the Adaptive Climate integration. It observes heating cycle performance, computes metrics, adjusts PID gains through rule-based evaluation, and tracks confidence in the tuning. The subsystem spans 20+ modules across `adaptive/` (core algorithms) and `managers/` (orchestration), totaling approximately 10,500 lines of learning-related code.
 
 The architecture follows a pipeline pattern: temperature readings flow through cycle tracking into metric computation, rule evaluation, gain adjustment, and confidence tracking. However, this clean pipeline is complicated by extensive cross-cutting concerns (learning suppression, graduated night setback, undershoot detection) and significant code duplication across module boundaries.

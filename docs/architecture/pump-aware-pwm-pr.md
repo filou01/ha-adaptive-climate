@@ -1,5 +1,11 @@
 # feat: optional pump-aware HEAT PWM coordination
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](../fork-extensions.md)
+
+> **Scope / Geltungsbereich:** Historical release/design record; use the [current documentation index](../fork-extensions.md) for preview 8. Historischer Versions-/Designbericht; aktuelle Bedienung und Nachweise stehen im Erweiterungsindex. Original test tables and commit/CI references apply to both language sections and retain their original revision context.
+
+## English
+
 Independent zone PWM can start a shared electrically OR-controlled pump many
 times per day. This change adds disabled-by-default group scheduling with
 minimal overlap (spread pulses, favor high-weight solo time) or maximal overlap
@@ -77,7 +83,7 @@ and infer preview-6 journals conservatively. Deliberate priority and explicit
 effective-target contracts remain; a priority pulse also spends ordinary allowance.
 See [reproduction, changed files, compatibility and evidence](../pwm-ordinary-starts.md).
 
-## Validation
+### Validation
 
 Preview 8 repairs executable minimal handovers using signed remaining budgets,
 minimum switching bounds and advisory next-period opportunities. Active and
@@ -120,7 +126,7 @@ relays/pump/flow, supervised 24h hydronic run with real minimum times, Raspberry
 Pi CPU measurement, variable maintenance-duty 24h replay with real actuator
 timing, and wiki publication. Stub/protocol tests do not replace these trials.
 
-## Rollout and rollback
+### Rollout and rollback
 
 Publish only a clearly marked preview in the personal fork. Keep the feature
 disabled initially, preserve learning storage, verify ordinary behavior and
@@ -136,3 +142,81 @@ code/tests/docs and adjust fork-specific installation, badge and engineering
 history references for the upstream repository. The source version remains
 semantic-release managed at its upstream baseline; the fork preview is
 identified by its Git tag and exact commit.
+
+## Deutsch
+
+### Umfang des Forks und vorgeschlagene Beschreibung
+
+Dies ist eine vorbereitete Beschreibung der optionalen HEAT-PWM-Koordination,
+kein bereits eröffneter Upstream-PR. Unabhängige Zonen können eine gemeinsame
+elektrisch ODER-gesteuerte Pumpe häufig neu starten. Der Fork bietet ausdrücklich
+aktivierte Gruppen mit minimaler Überlappung für Laufketten und bevorzugten
+Alleinlauf großer Zonen oder maximaler Überlappung für konzentrierte Laufzeit.
+Standard bleibt deaktiviert. Maximal kann gegenüber bereits durchgängigem
+unabhängigem Betrieb mehr Starts erzeugen.
+
+Ein zulässiger echter Sollwertwechsel oder OFF→HEAT wird sofort ausgewertet,
+ohne auf den nächsten optimierten Slot zu warten. Echte Nachfrage,
+Mindestzeiten, Sicherheit und verdientes Niedriglastguthaben bleiben maßgeblich.
+Beobachtete elektrische Sekunden zahlen die Bilanz genau einmal; veraltete
+Reservierungen dürfen nicht zusätzlich ausgeführt werden.
+
+Unterstützt sind gleiche positive Perioden, HEAT-only und je ein nicht
+invertierter Switch-/Helferausgang. Ein Helfer bestätigt keine nachgelagerte
+Relaisstellung. Nicht unterstützte Modi/Ausgänge, doppelte Relais, Ausfälle oder
+unbekannte Startzustände führen kontrolliert zum dokumentierten Rückfall.
+Nicht konfigurierte Zonen behalten ihre unabhängige Steuerung. Es wird keine
+Optimierer-Abhängigkeit und keine direkte Pumpensteuerung eingeführt.
+
+### Enthaltene Weiterentwicklungen
+
+- Preview 1: validierte Gruppen, reiner Phasenplaner, Protokoll-Adapter,
+  effektive Reservierungen, ein widerruflicher Timer und serialisierter,
+  zustandsbestätigter Aktorpfad.
+- Preview 2: enger Lernzyklus-/Settling-Fix, tatsächliche PID-Diagnostik und
+  Lerner-Version 12 mit dauerhaftem Cooldown-Zykluszähler. Das größere
+  Maintenance-Lernthema bleibt ausdrücklich offen.
+- Preview 3: einmalige vollständig abgeschlossene gemeinsame
+  Store-Initialisierung vor Veröffentlichung und Number-Entdeckung.
+- Preview 4: Helferausgänge und gemischte Switch-/Helfergruppen mit klarer
+  Beobachtungsgrenze.
+- Preview 5: HA-konforme Event-Loop-Callbacks statt Executor-Zugriffen auf
+  Planer-/Aktorzustand und Task-Erzeugung.
+- Preview 6: dauerhafte Budget-, Prioritäts- und Mindestzeitjournale sowie
+  konservativer Umgang mit ungewissem ON und Speicherfehlern.
+- Preview 7: eine gewöhnliche Startfreigabe je Zone und Gruppenepoche,
+  zusammenhängendes Pulsbudget, signierte abgeschlossene Korrekturen und
+  kompatible Wiederherstellung.
+- Preview 8: ausführbare minimale Übergaben aus Restbudget, Schutzgrenzen und
+  möglichen Folgefenstern; aktive und priorisierte Starts bleiben fest.
+
+### Prüfbelege richtig lesen
+
+Die große Original-Validierungsliste oben beschreibt Preview 7: Linux
+3.11/3.12 jeweils 3682 bestanden, elf übersprungen; 54 neue Freigabefälle,
+50 Speicher-/Neustartfälle, sechs gemeinsame Startfälle und 29 Lern-Hotfixfälle.
+Die damaligen 14 Tagesmodelle bestanden innerhalb ihrer dokumentierten Grenzen.
+Das ist historische Evidenz und nicht die aktuelle Preview-8-Matrix.
+
+Für Preview 8 gilt der verlinkte aktuelle Bericht: 37 neue Tests, lokal 271
+PWM-Dateitests und auf Linux 3.11/3.12 jeweils 3719 bestanden/elf übersprungen,
+mit bestandenem Lint/Format/Typcheck/HACS/hassfest. Der zusätzliche Tagestrace
+reduziert modellierte Starts von 49 auf 25 bei identischen 30000/14400
+ON-Sekunden. Der reale HA-Start wurde später begrenzt geprüft; echte
+Übergabezyklen und physische hydraulische Abnahme waren damit nicht bewiesen.
+
+Die englischen Tabellen und verlinkten Berichte enthalten alle Quellstände,
+Befehle und unveränderlichen CI-Nachweise. Nicht durchgeführte physische,
+Tagesbetriebs-, Stromausfall-, Raspberry-Pi-/SD-/Save-Latenz-Prüfungen dürfen
+nicht aus grünen Mock- oder Simulationsprüfungen abgeleitet werden.
+
+### Veröffentlichung und Rückkehr
+
+Installation und Rückkehr richten sich nach der aktuellen zweisprachigen
+Benutzeranleitung. Vorher Backups, für überwachte Umstellung OFF prüfen,
+richtige Fork-Vorabversion wählen und HA neu starten. Keine doppelten
+Integrationen derselben Domain, kein Lernreset und keine separaten Patch-Skripte.
+Deaktivierte Koordination nimmt allgemeine Lern-/Startkorrekturen nicht zurück.
+Ein Code-Rollback muss die jeweilige Journal-/Lerner-Kompatibilität beachten.
+Diese Seite allein erteilt keine Erlaubnis, Beiträge im Namen des Nutzers an
+Upstream zu senden.

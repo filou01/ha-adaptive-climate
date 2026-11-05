@@ -1,5 +1,11 @@
 # Learning hotfixes in fork preview 2
 
+[English](#english) · [Deutsch](#deutsch) · [Documentation index / Doku-Einstieg](fork-extensions.md)
+
+> **Scope / Geltungsbereich:** Historical release/design record; use the [current documentation index](fork-extensions.md) for preview 8. Historischer Versions-/Designbericht; aktuelle Bedienung und Nachweise stehen im Erweiterungsindex. Original test tables and commit/CI references apply to both language sections and retain their original revision context.
+
+## English
+
 > Preview 3 includes these fixes plus the [shared learning startup fix](learning-startup-fix.md).
 
 Release `v0.67.1-pwm.2` integrates the reviewed changes from
@@ -8,7 +14,7 @@ current controller architecture. Their deployment/backup/restart entry points
 are not included or executed. The fixes apply with PWM coordination enabled or
 disabled; the planner and minimal/maximal overlap policies are unchanged.
 
-## Behavior and scope
+### Behavior and scope
 
 [Upstream issue #6](https://github.com/afewyards/ha-adaptive-climate/issues/6):
 restoring an old controller session no longer suppresses a fresh learning
@@ -40,7 +46,7 @@ Older payloads without the counter start it conservatively at zero once;
 subsequent saves/restarts preserve it. No manual learning reset is needed.
 Intentional PID application retains its existing history-reset behavior.
 
-## Validation evidence
+### Validation evidence
 
 Tested source: `a9b4716f58d88b4bd20007706026f4f43bf5c622`.
 The release adds documentation to that exact source/test tree.
@@ -71,7 +77,7 @@ supervised 24-hour heating operation, Raspberry Pi performance measurements,
 variable maintenance-duty replay with real actuator timing, and wiki publication.
 No running Home Assistant installation was modified or restarted.
 
-## Changed files and architecture
+### Changed files and architecture
 
 - `adaptive/learner_serialization.py`, `adaptive/learning.py`,
   `adaptive/learning_coordinator.py`: persistent counter, diagnostics and explicit
@@ -90,7 +96,7 @@ No running Home Assistant installation was modified or restarted.
 - Documentation: this report, README, PWM user guide, historical verification
   notice and combined PR draft.
 
-## Installation and rollback
+### Installation and rollback
 
 Use [the fork release](https://github.com/filou01/ha-adaptive-climate/releases/tag/v0.67.1-pwm.2)
 in HACS with prereleases visible, then restart HA. Existing YAML remains valid;
@@ -106,3 +112,71 @@ delete learning storage as a troubleshooting step. Fork preview identity uses
 the release tag; the semantic-release-managed manifest remains at `0.67.0`.
 
 No upstream pull request has been opened.
+
+## Deutsch
+
+### Geltungsbereich
+
+Preview 2 (`v0.67.1-pwm.2`) integriert die geprüften Lern- und Diagnosekorrekturen
+in die vorhandene Architektur. Die früheren eigenständigen Patch-/Deployment-
+Skripte werden weder mitgeliefert noch ausgeführt. Die Änderungen wirken auch
+bei deaktivierter PWM-Koordination. Phasenplaner und Überlappungsstrategien
+werden durch diese Korrekturen nicht verändert. Preview 3 und spätere Versionen
+enthalten sie ebenfalls.
+
+### Lernzyklen und Grenzen von Issue 6
+
+Wiederhergestellte vorübergehende Zyklus-/Bedarfsflags passen nun zum frischen
+Tracker, sodass eine alte Sitzung keinen neuen Lernzyklus mehr verhindert.
+Gespeicherte PID-Werte, Integral, Verschleißdaten und abgeschlossene Lernzyklen
+bleiben erhalten. Null und sehr kleine Ausgänge verwenden eine gemeinsame
+fortlaufende Niedrigbedarfsfrist; 0→0,1→0 kann die Beruhigungsphase nicht ständig
+zurücksetzen. Erzwungenes OFF beendet auch eine aktive Lernsitzung, wenn das
+elektrische Relais bereits OFF ist. Beide Heizungssteuerpfade sind abgedeckt.
+
+Nicht gelöst ist der größere Maintenance-Fall: Wiederholter Bedarf ab der
+bestehenden Zwei-Prozent-Schwelle kann eine Sitzung weiter offen halten. Es gibt
+hier keine neue maximale Sitzungsdauer, keine Änderung des Außenanteils,
+keine künstlich erzeugten abgeschlossenen Zyklen und keinen Settling-Neuentwurf.
+
+### PID-Diagnostik und Issue 7
+
+Manuelle Dienste und tägliche Analyse lesen die tatsächlich wirksamen HEAT-
+Verstärkungen aus dem Gains Manager. Fehlende Werte werden ausdrücklich gemeldet.
+Diagnosen unterscheiden zu wenige Zyklen, Cooldown, gestörte/verwendbare Zyklen,
+Konvergenz und ausgefilterte Regeln. Das bloße Berechnen oder Anzeigen einer
+Empfehlung verbraucht weder Cooldown-Zeit noch Zyklenguthaben. Erst erfolgreiches
+Anwenden aktualisiert den Anpassungszeitpunkt und setzt den zugehörigen Zähler
+zurück. Ein fehlgeschlagener Versuch verbraucht dieses Guthaben nicht.
+
+Die Lerner-Nutzlast wird von Version 11 auf 12 erweitert und speichert
+`cycles_since_last_adjustment`. Bestehende Zyklen, Konfidenz und Zeitstempel
+bleiben erhalten. Ein bisher fehlender Zähler beginnt einmal konservativ bei
+null. Manuelles Löschen der Lerndaten ist nicht erforderlich. Bewusstes
+PID-Anwenden behält das bisherige Zurücksetzen der zugehörigen Historie bei.
+
+### Historische Prüfung
+
+Geprüfter Quellstand: `a9b4716f58d88b4bd20007706026f4f43bf5c622`.
+Die gemeinsame Messwerttabelle im englischen Abschnitt dokumentiert die
+Originalprüfung: Linux 3.11 und 3.12 jeweils 3549 bestanden/11 übersprungen,
+29 neue Hotfix-Fälle, 74 PWM-Fälle, Ruff/Format/Pyright sowie CI/HACS/hassfest
+erfolgreich. Windows: 3538 bestanden/11 übersprungen und elf bereits bestehende
+Berichts-Datumsformatierungsfehler. Die acht damaligen Tagesmodelle bleiben
+Softwareversuche, keine physische Heizungsprüfung.
+
+Nicht durchgeführt wurden damals reale HA-/Geräte-End-to-End-Tests, Pumpen- und
+Durchflussmessungen, überwachter Tagesbetrieb, Raspberry-Pi-Messungen, ein
+variabler Maintenance-Tagesvergleich mit echter Aktorzeit und Wiki-Veröffentlichung.
+Quell- und Testdateien sowie unveränderliche CI-Verweise sind oben vollständig
+aufgeführt; spätere Ergebnisse stehen im aktuellen Erweiterungsindex.
+
+### Installation und Rückkehr
+
+Fork-Vorabversion in HACS wählen, vorher Integration/Konfiguration/Lernspeicher
+sichern und HA neu starten. Keine zusätzlichen alten Patch-Skripte ausführen
+und keine Lerndaten zurücksetzen. Deaktivierte Koordination nimmt diese
+allgemeinen Lernkorrekturen nicht zurück. Ein Code-Rollback auf Preview 1 oder
+die notierte Upstream-Version kann den neuen Zähler nicht weiter speichern;
+das Backup deshalb behalten. Der Manifestwert bleibt semantic-release-verwaltet
+bei `0.67.0`, die Fork-Version ist am Release-Tag erkennbar.
