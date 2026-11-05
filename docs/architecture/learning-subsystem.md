@@ -2,6 +2,10 @@
 
 ## Overview
 
+The adaptive learning subsystem is the intelligence layer of the Adaptive Climate integration. It observes heating cycle performance, computes metrics, adjusts PID gains through rule-based evaluation, and tracks confidence in the tuning. The subsystem spans 20+ modules across `adaptive/` (core algorithms) and `managers/` (orchestration), totaling approximately 10,500 lines of learning-related code.
+
+The architecture follows a pipeline pattern: temperature readings flow through cycle tracking into metric computation, rule evaluation, gain adjustment, and confidence tracking. However, this clean pipeline is complicated by extensive cross-cutting concerns (learning suppression, graduated night setback, undershoot detection) and significant code duplication across module boundaries.
+
 ### Fork preview compatibility notes
 
 This analysis includes historical module sizes and payload references. In the
@@ -21,10 +25,6 @@ the existing outer Store version 5; it is not a replacement for learner history.
 See [learning hotfix scope](../learning-hotfixes.md#english),
 [shared startup](../learning-startup-fix.md#english) and
 [restart accounting](../pwm-restart-safety.md#english).
-
-The adaptive learning subsystem is the intelligence layer of the Adaptive Climate integration. It observes heating cycle performance, computes metrics, adjusts PID gains through rule-based evaluation, and tracks confidence in the tuning. The subsystem spans 20+ modules across `adaptive/` (core algorithms) and `managers/` (orchestration), totaling approximately 10,500 lines of learning-related code.
-
-The architecture follows a pipeline pattern: temperature readings flow through cycle tracking into metric computation, rule evaluation, gain adjustment, and confidence tracking. However, this clean pipeline is complicated by extensive cross-cutting concerns (learning suppression, graduated night setback, undershoot detection) and significant code duplication across module boundaries.
 
 ## Module Catalog
 

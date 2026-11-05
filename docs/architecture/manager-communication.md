@@ -2,6 +2,8 @@
 
 ## Overview
 
+Adaptive Climate uses four distinct communication patterns between the thermostat entity and its managers. Each pattern serves a specific purpose and should be used in the appropriate context.
+
 ### Fork preview: PWM coordination boundary
 
 In the optional `codex/pump-aware-pwm` preview, `HAZoneAdapter` implements the
@@ -19,8 +21,6 @@ handover. Durable journal state preserves budgets and allowances, while preview
 patterns still apply; an event notification alone is not command confirmation.
 See the [bilingual extension index](../fork-extensions.md) and
 [current handover architecture](../pwm-runtime-handovers.md#english).
-
-Adaptive Climate uses four distinct communication patterns between the thermostat entity and its managers. Each pattern serves a specific purpose and should be used in the appropriate context.
 
 ## The Four Patterns
 
