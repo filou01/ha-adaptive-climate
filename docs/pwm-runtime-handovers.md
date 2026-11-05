@@ -137,9 +137,28 @@ than prescribe a phase placement that this fix is intended to optimize.
 ### Validation evidence
 
 Before-fix reproduction: **3 failed**, matching all three original gaps.
-New handover suite: **37 passed** under Windows Python 3.12.14.
-Ruff check/format and Pyright: **PASS**. Final full-suite counts, exact source
-commit and Linux/HACS/hassfest links will be recorded after GitHub validation.
+Tested source/test commit: `206ad4f430e5957a68a3cc120f62e539f401896d`.
+The release documentation commit has an identical source/test tree.
+
+| Validation | Result |
+| --- | --- |
+| New handover suite, Windows Python 3.12.14 | **37 passed**, including one new daily trace |
+| All `test_pwm*.py`, Windows | **271 passed** |
+| Full Linux Python 3.11, GitHub | **3719 passed, 11 skipped**, exit 0; six existing marker warnings |
+| Full Linux Python 3.12, GitHub | **3719 passed, 11 skipped**, exit 0; six existing marker warnings |
+| Ruff check / format | **PASS**, 256 files formatted |
+| Pyright source | **PASS**, zero errors/warnings |
+| HACS / hassfest | **PASS** for the tested source commit |
+| Windows full suite, Python 3.12.14 | **3707 passed, 11 skipped, 12 failed**; identical failure names on unmodified preview 7 (**3670 passed, 11 skipped, 12 failed**) in the same environment |
+
+Exact-source GitHub evidence: [Linux matrix](https://github.com/filou01/ha-adaptive-climate/actions/runs/41986443641),
+[HACS](https://github.com/filou01/ha-adaptive-climate/actions/runs/41986443634),
+[hassfest](https://github.com/filou01/ha-adaptive-climate/actions/runs/41986443639).
+The Windows failures comprise eleven existing `%b %-d` date-format failures
+and an unchanged real-clock undershoot test (`dt` can be zero in the full run).
+The latter also fails in the unmodified full-suite baseline and passed when
+run alone. No reporting or undershoot changes are included. The installed
+pytest-asyncio also emits its existing unset-loop-scope deprecation notice.
 
 **NOT RUN:** installed-HA/device end-to-end validation, physical relay/pump/flow
 checks, supervised 24h heating, real power loss/OS cache tests, Raspberry Pi
