@@ -32,6 +32,7 @@ def test_public_state_exposes_only_configured_group_diagnostics(live, configured
             assert attrs["pwm_coordination"] == expected
             assert "remaining_credit_seconds" in attrs["pwm_coordination"]
             assert "runtime_plan_reason" in attrs["pwm_coordination"]
+            assert attrs["pwm_coordination"]["handover_overlap_seconds"] == live.registry.groups[0].overlap
         else:
             assert "pwm_coordination" not in attrs
     assert live.registry.diagnostics(thermostat.entity_id) == expected

@@ -658,6 +658,7 @@ class PWMLoadBalancingManager:
             "mode": self.mode,
             "reason": self.reason,
             "overlap_strategy": self.strategy,
+            "handover_overlap_seconds": self.overlap,
             "generation": self._generation,
             "estimated_pump_starts": self.estimated_starts,
             "estimated_energized_seconds": round(self.energized_seconds, 1),

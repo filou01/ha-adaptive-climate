@@ -1,6 +1,7 @@
 """Executable handovers must use real budgets and switching opportunities."""
 
 from collections import Counter
+from itertools import pairwise
 import json
 import random
 from time import perf_counter
@@ -27,6 +28,25 @@ def protected(durations):
 def balanced(sim):
     for ledger in sim.manager._zones.values():
         assert ledger.requested == pytest.approx(ledger.delivered + ledger.credit + ledger.cancelled_balance, abs=0.01)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cadence", [10, 60])
+async def test_two_minute_handover_stays_exact_under_repeated_control_updates(cadence):
+    sim = protected((1200, 900, 600, 600))
+    sim.manager.overlap = 120
+    await sim.update()
+    for at in range(cadence, 3000, cadence):
+        await sim.advance(at)
+        for index in range(4):
+            await sim.update(index)
+    await sim.advance(3300)
+    intervals = [zone.transitions[:2] for zone in sim.zones]
+    assert all(len(edges) == 2 and edges[0][1] and not edges[1][1] for edges in intervals)
+    for outgoing, incoming in pairwise(intervals):
+        assert outgoing[1][0] - incoming[0][0] == pytest.approx(120, abs=0.001)
+    assert sim.manager.estimated_starts == 1
+    balanced(sim)
 
 
 @pytest.mark.asyncio

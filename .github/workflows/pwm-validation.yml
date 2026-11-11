@@ -37,10 +37,13 @@ jobs:
       - run: pyright custom_components/adaptive_climate/
   real-ha-store:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        homeassistant: ["2026.10.4", "2026.11.0"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: python -m pip install homeassistant==2026.11.0
+      - run: python -m pip install homeassistant==${{ matrix.homeassistant }}
       - run: python tools/verify_pwm_store.py

@@ -14,11 +14,12 @@ from custom_components.adaptive_climate.managers import pwm_coordination
 from test_pwm_load_balancing import Simulation
 
 
-async def benchmark(monkeypatch, scenario, cadence, strategy):
-    durations = (0, 0, 0, 0) if scenario == "idle" else (720, 540, 360, 360)
+async def benchmark(monkeypatch, scenario, cadence, strategy, recorded=None, overlap=240):
+    durations = (0, 0, 0, 0) if scenario == "idle" or recorded is not None else (720, 540, 360, 360)
     if scenario == "continuous":
         durations = (3600,) * 4
     sim = Simulation(durations, strategy)
+    sim.manager.overlap = overlap
     totals = {"writes": 0, "bytes": 0, "by_key": {}}
     totals["writes_by_kind"] = {}
     phase = SimpleNamespace(kind="migration")
@@ -106,15 +107,26 @@ async def benchmark(monkeypatch, scenario, cadence, strategy):
 
     sim.manager.checkpoint = counted_checkpoint
     started = perf_counter()
-    for tick in range(0, 86400, cadence):
-        await sim.advance(tick)
-        for index, zone in enumerate(sim.zones):
-            if scenario == "noise":
-                zone.seconds = durations[index] + (tick // cadence % 3 - 1) * 3.6
-            if scenario == "priority" and tick in (7200, 43200):
-                zone.target += 0.5
+    if recorded is None:
+        for tick in range(0, 86400, cadence):
+            await sim.advance(tick)
+            for index, zone in enumerate(sim.zones):
+                if scenario == "noise":
+                    zone.seconds = durations[index] + (tick // cadence % 3 - 1) * 3.6
+                if scenario == "priority" and tick in (7200, 43200):
+                    zone.target += 0.5
+                await sim.update(index)
+        await sim.advance(86400)
+    else:
+        for row in recorded["updates"]:
+            await sim.advance(row["at"])
+            index = row["zone"]
+            zone = sim.zones[index]
+            zone.seconds = max(0, min(100, row["output"])) * 36
+            zone.target = row["target"]
+            zone.mode = row["mode"]
             await sim.update(index)
-    await sim.advance(86400)
+        await sim.advance(recorded["duration"])
     await registry.async_save()
     elapsed = perf_counter() - started
     transitions = [z.transitions for z in sim.zones]

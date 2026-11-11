@@ -65,6 +65,32 @@ References: [HA Store implementation](https://github.com/home-assistant/core/blo
 Atomic replacement is not a promise about storage-controller caches, hardware
 power-loss protection or fsync of every directory entry.
 
+### Checking two-minute handovers against observed inputs
+
+For a two-minute minimal handover, explicitly set
+`handover_overlap_seconds: 120` on the group. The compatibility default remains
+240 seconds. The configured target is exposed as
+`pwm_coordination.handover_overlap_seconds`; it is a target, not a guarantee that
+every observed pairwise overlap has that length. Stable ordinary chains with
+enough genuine demand retain exact 120s handovers in deterministic 10s/60s update
+regressions. Actual HA event-loop/service latency adds timing jitter.
+
+Priority setpoint/mode changes, changing already-active budgets, minimum times,
+deferral limits and demand exceeding a period can require longer/shorter overlap.
+Do not postpone genuine eligible priority heat, cut earned heat or create extra
+heat merely to make every overlap equal 120s. Diagnose those cases using the
+priority counters, runtime reasons, credit and input history, not pairwise edges
+alone. Separate planned maintenance/restart recovery from steady operation;
+retain the raw starts and report the actual exclusion/coverage window.
+
+`tests/test_pwm_recorded_replay.py` optionally replays time-ordered, anonymized
+observed inputs using `PWM_RECORDED_TRACE` and `PWM_RECORDED_OUTPUT`. Its module
+docstring defines the JSON schema. It uses a cold-start, effective-duration
+model with no physical valve timing; exact transition/ledger equality compares
+software versions, not the historical installation's physical heat delivery.
+Private datasets remain outside the repository. The real-HA Store probe covers
+both HA 2026.10.4 and 2026.11.0.
+
 ### CPU work
 
 The immutable highest-weight member is cached. Identical cyclic planner inputs
@@ -276,6 +302,31 @@ alle Hardware-/Stromausfallarten.
 Unveränderte reine Phasenpläne, konstante Gewichte und passende Ereignistimer
 werden wiederverwendet. Veraltete Callbacks bleiben entwertet. Zeitabhängige
 Abrechnung, Grenzen, Prioritäten und Ausgangsänderungen werden weiterhin geprüft.
+
+### Zwei-Minuten-Übergaben prüfen
+
+Für zwei Minuten im Minimal-Modus muss die Gruppe ausdrücklich
+`handover_overlap_seconds: 120` setzen. Der kompatible Standard bleibt 240s.
+Der konfigurierte Zielwert steht künftig unter
+`pwm_coordination.handover_overlap_seconds`. Stabile normale Ketten halten in
+deterministischen Tests mit 10s-/60s-Abgleichen exakt 120s ein; HA-Ereignisschleife
+und Dienste können reale Zeitabweichungen verursachen.
+
+Prioritäten durch Sollwert-/Modusänderungen, laufende Budgetänderungen,
+Mindestzeiten, Aufschubgrenzen und zu hoher Gesamtbedarf können andere
+Überlappungen erfordern. Dafür nicht zulässige Sofortwärme verzögern,
+Wärmeansprüche kürzen oder zusätzliche Wärme erzeugen. Prioritätszähler,
+Laufzeitgründe und Zeitkonten zusammen mit den Eingaben prüfen. Wartung und
+Neustartwiederherstellung getrennt ausweisen; Rohstarts behalten und das
+betroffene Zeit-/Abdeckungsfenster benennen.
+
+Der optionale Test `test_pwm_recorded_replay.py` verarbeitet anonymisierte
+Eingabeverläufe über `PWM_RECORDED_TRACE`/`PWM_RECORDED_OUTPUT`; das JSON-Schema
+steht im Modul. Er modelliert einen Kaltstart mit effektiven Impulszeiten ohne
+physische Ventillaufzeit. Die Gleichheit von Ausgangswechseln und Zeitkonten
+prüft Softwareversionen, nicht die reale Wärmelieferung der historischen Anlage.
+Private Daten bleiben außerhalb des Repositorys. Der echte HA-Store wird unter
+HA 2026.10.4 und 2026.11.0 geprüft.
 
 ### Hydraulische Konsistenz
 
