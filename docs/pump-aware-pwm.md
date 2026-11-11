@@ -140,6 +140,10 @@ See [the test plan](pump-aware-pwm-test-plan.md) for automated coverage and
 supervised acceptance criteria. No optimizer package or additional dependency
 is required. Independent learning reliability fixes are submitted separately.
 
+### Persistence and hydraulic diagnostics
+
+See [persistence policy, migration, Hydraulic Consistency and historical CSV analysis](pwm-persistence-and-hydraulics.md) for the compact journal and optional diagnostics.
+
 ## Deutsch
 
 ### Zweck und Konfiguration
@@ -235,3 +239,5 @@ Planwerte. Zyklische Projektion und ausführbarer Plan haben unterschiedliche
 Zeithorizonte. Der [Testplan](pump-aware-pwm-test-plan.md#deutsch) nennt
 automatisierte Nachweise und Abnahmekriterien. Keine neue Optimierungsbibliothek
 ist erforderlich. Allgemeine Lernkorrekturen werden separat eingereicht.
+
+Details zu [Speicherstrategie, Migration, hydraulischer Konsistenz und CSV-Analyse](pwm-persistence-and-hydraulics.md#deutsch) stehen im ergänzenden Leitfaden.

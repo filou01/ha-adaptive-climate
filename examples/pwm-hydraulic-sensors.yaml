@@ -1,0 +1,100 @@
+# English: Optional YAML example, not installed automatically. Replace climate.zone_a.
+# Deutsch: Optionales YAML-Beispiel, keine automatische Installation. climate.zone_a ersetzen.
+# UI Template helpers can use the same state/availability expressions.
+# UI-Template-Helper können dieselben Zustands-/Verfügbarkeitsausdrücke verwenden.
+template:
+  - sensor:
+      - name: Zone A Hydraulic Consistency
+        unique_id: zone_a_hydraulic_consistency
+        state_class: measurement
+        unit_of_measurement: "%"
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('score') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('score') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Solo Heating
+        unique_id: zone_a_solo_heating
+        state_class: measurement
+        unit_of_measurement: "%"
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('solo_runtime_pct') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('solo_runtime_pct') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Mean Competing Load
+        unique_id: zone_a_mean_competing_load
+        state_class: measurement
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('mean_competing_load') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('mean_competing_load') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Hydraulic Load Changes
+        unique_id: zone_a_hydraulic_load_changes
+        state_class: measurement
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('competing_load_changes') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('competing_load_changes') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Hydraulic Active Time
+        unique_id: zone_a_hydraulic_active_time
+        state_class: total_increasing
+        unit_of_measurement: "s"
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('cumulative_active_seconds') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('cumulative_active_seconds') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Hydraulic Solo Time
+        unique_id: zone_a_hydraulic_solo_time
+        state_class: total_increasing
+        unit_of_measurement: "s"
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('cumulative_solo_seconds') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('cumulative_solo_seconds') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Hydraulic Competition Integral
+        unique_id: zone_a_hydraulic_competition_integral
+        state_class: total_increasing
+        unit_of_measurement: "s"
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('cumulative_r_seconds') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('cumulative_r_seconds') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Hydraulic Competition Squared Integral
+        unique_id: zone_a_hydraulic_competition_squared_integral
+        state_class: total_increasing
+        unit_of_measurement: "s"
+        availability: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') %}{{ p is mapping and p.get('hydraulic_consistency', {}).get('cumulative_r2_seconds') is number }}
+        state: >-
+          {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('cumulative_r2_seconds') }}
+        attributes:
+          collection_id: >-
+            {% set p = state_attr('climate.zone_a', 'pwm_coordination') or {} %}{{ p.get('hydraulic_consistency', {}).get('collection_id') }}
+      - name: Zone A Heating Control Output
+        unique_id: zone_a_heating_control_output
+        unit_of_measurement: "%"
+        state_class: measurement
+        availability: >-
+          {{ state_attr('climate.zone_a', 'control_output') is number }}
+        state: >-
+          {{ state_attr('climate.zone_a', 'control_output') }}

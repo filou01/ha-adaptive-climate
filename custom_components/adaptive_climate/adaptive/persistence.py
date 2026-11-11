@@ -44,6 +44,12 @@ def _create_store(hass, version: int, key: str):
     """Create a Store instance."""
     from homeassistant.helpers.storage import Store
 
+    domain_data = getattr(hass, "data", {})
+    if isinstance(domain_data, dict) and domain_data.get("adaptive_climate", {}).get("pwm_coordination") is not None:
+        from ..managers.pwm_storage import create_store
+
+        return create_store(hass, key, version)
+
     return Store(hass, version, key)
 
 

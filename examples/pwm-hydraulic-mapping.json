@@ -1,0 +1,13 @@
+{
+  "continuity_verified": false,
+  "groups": {
+    "shared_pump": {
+      "zones": {
+        "zone_a": {"entity_id": "input_boolean.zone_a", "display_name": "Zone A", "weight": 4},
+        "zone_b": {"entity_id": "input_boolean.zone_b", "display_name": "Zone B", "weight": 1},
+        "bedroom_1": {"entity_id": "input_boolean.zone_c", "display_name": "Bedroom 1", "weight": 1},
+        "bedroom_2": {"entity_id": "input_boolean.zone_d", "display_name": "Bedroom 2", "weight": 1}
+      }
+    }
+  }
+}

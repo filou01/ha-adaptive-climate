@@ -6,6 +6,8 @@ Run with pytest -s to print measured JSON including per-zone delivery/debt.
 """
 
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 import time
 
@@ -141,3 +143,13 @@ async def test_24h_legacy_comparison(monkeypatch, strategy, interactive, duties)
             if duties == (720, 720, 720, 720):
                 assert starts["coordinated"] < starts["legacy"]
     assert sim.manager.mode == "active"
+    if output := os.environ.get("PWM_REPLAY_OUTPUT"):
+        path = Path(output)
+        path.mkdir(parents=True, exist_ok=True)
+        data = {
+            "legacy": [s.transitions for s, _, _ in legacy.zones],
+            "coordinated": [z.transitions for z in sim.zones],
+            "report": report,
+        }
+        name = f"{'-'.join(str(d) for d in duties)}-{strategy}-{'interactive' if interactive else 'fixed'}.json"
+        (path / name).write_text(json.dumps(data), encoding="utf-8")

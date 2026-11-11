@@ -1,0 +1,42 @@
+# English: Optional custom ApexCharts card; synthetic sensor IDs.
+# Deutsch: Optionale ApexCharts-Karte; synthetische Sensor-IDs.
+# Requires https://github.com/RomRider/apexcharts-card
+type: custom:apexcharts-card
+graph_span: 24h
+header:
+  show: true
+  title: Hydraulic Consistency / Hydraulische Konsistenz
+yaxis:
+  - id: percent
+    min: 0
+    max: 100
+series:
+  - entity: sensor.zone_a_hydraulic_consistency
+    name: Consistency / Konsistenz
+    yaxis_id: percent
+    group_by:
+      func: last
+      duration: 10min
+  - entity: sensor.zone_a_solo_heating
+    name: Solo heating / Alleinlauf
+    yaxis_id: percent
+    group_by:
+      func: last
+      duration: 10min
+  - entity: sensor.zone_a_mean_competing_load
+    name: Competition / Konkurrenz
+    yaxis_id: percent
+    transform: return x === null ? null : x * 100;
+    group_by:
+      func: last
+      duration: 10min
+  - entity: sensor.zone_a_heating_control_output
+    name: Heating output / Heizleistung
+    yaxis_id: percent
+    group_by:
+      func: last
+      duration: 10min
+# English: For 7 days change graph_span to 7d and grouping to 1h.
+# These remain rolling-24h score snapshots, not a recomputed 7-day score.
+# Deutsch: Für sieben Tage graph_span auf 7d und Gruppierung auf 1h setzen.
+# Das zeigt weiterhin 24h-Score-Snapshots, keinen neu berechneten 7-Tage-Score.

@@ -155,6 +155,7 @@ class PWMCoordinationRegistry:
         self.hass = hass
         self.groups: list[PWMLoadBalancingManager] = []
         self._store: LearningDataStore | None = None
+        self._journal: Any = None
         self._journals: dict[str, Any] = {}
         self._by_entity: dict[str, PWMLoadBalancingManager] = {}
         self._adapters: dict[str, HAZoneAdapter] = {}
@@ -181,8 +182,17 @@ class PWMCoordinationRegistry:
         if self._store is not None:
             return
 
+        from .pwm_storage import PWMJournalStore
+
         self._store = store
-        data = store.load_pwm_coordination()
+        try:
+            self._journal = PWMJournalStore(store)
+            data = await self._journal.async_load()
+        except Exception:
+            _LOGGER.exception("Cannot initialize dedicated PWM journals")
+            for group in self.groups:
+                group.fail("restart_storage_error", release=False)
+            return
         if not isinstance(data, dict):
             for group in self.groups:
                 group.fail("restart_state_invalid", release=False)
@@ -200,7 +210,7 @@ class PWMCoordinationRegistry:
                 for entity_id, row in previous.get("zones", {}).items():
                     if entity_id not in state["zones"]:
                         state["zones"][entity_id] = row
-                await store.async_save_pwm_coordination(manager.name, state)
+                await self._journal.async_save(manager.name, state, manager.checkpoint_critical)
                 self._journals[manager.name] = state
 
             def ready(manager: PWMLoadBalancingManager = group) -> None:
@@ -260,6 +270,11 @@ class PWMCoordinationRegistry:
             # A configured and an unconfigured zone must not share a relay.
             self._check_outputs()
             return
+        if group.mode == "fallback":
+            if group.reason in ("restart_storage_error", "restart_state_invalid", "restart_reconciliation_failed"):
+                entity._heater_controller.enable_safe_actuation()
+                adapter.restart_force_off = adapter.active()
+            return  # Do not overwrite a durable-storage failure with ordinary fallback.
         if (
             adapter.period <= 0
             or len(adapter.outputs) != 1

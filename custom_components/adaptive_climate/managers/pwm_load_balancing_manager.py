@@ -18,6 +18,7 @@ from .heater_actuation import ActuationResult
 from .pwm_load_balancing_optimizer import Schedule, ZoneRequest, plan
 from .pwm_pulse import Pulse
 from .pwm_runtime_planner import RuntimeWindow, measure_windows, repair_windows
+from ..helpers.hydraulic_metrics import HydraulicTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ class PWMLoadBalancingManager:
         self._now = now
         self._zones: dict[str, Ledger] = {}
         self.checkpoint: Callable[[], Awaitable[None]] | None = None
+        self.checkpoint_critical = True
+        self.reconcile_calls = 0
+        self._plan_signature: tuple | None = None
         self.on_register: Callable[[], None] | None = None
         self.restored_members: set[str] = set()
         self.on_checkpoint_failure: Callable[[], Awaitable[None]] | None = None
@@ -138,6 +142,11 @@ class PWMLoadBalancingManager:
         self._runtime_starts: dict[str, float] = {}
         self._runtime_reasons: dict[str, str] = {}
         self._runtime_projected_starts = 0
+        self._highest_weight = min(members, key=lambda entity: (-members[entity], entity))
+        self._hydraulic = HydraulicTracker(members, now())
+        self._timer_generation = 0
+        self._timer_token = 0
+        self._timer_state: tuple | None = None
 
     def register(self, adapter: ZoneAdapter) -> None:
         """Bind after actual entity ID, restoration and controller readiness."""
@@ -194,6 +203,7 @@ class PWMLoadBalancingManager:
 
     def fail(self, reason: str, release: bool = True) -> None:
         """Cancel ownership first. Do not manufacture OFF/ON edges on handoff."""
+        self._hydraulic.observe(self._now(), dict.fromkeys(self.members))
         self._generation += 1
         if self._cancel is not None:
             self._cancel()
@@ -225,7 +235,7 @@ class PWMLoadBalancingManager:
         if active:
             self.energized_seconds += elapsed
         if len(active) > 1:
-            highest = min(self.members, key=lambda entity: (-self.members[entity], entity))
+            highest = self._highest_weight
             if highest in active:
                 self.high_weight_overlap_seconds += elapsed
             ordered = sorted(active)
@@ -233,6 +243,13 @@ class PWMLoadBalancingManager:
                 self.members[a] * self.members[b] for n, a in enumerate(ordered) for b in ordered[n + 1 :]
             )
         current = {entity for entity, zone in self._zones.items() if zone.adapter.active()}
+        self._hydraulic.observe(
+            now,
+            {
+                entity: (zone.adapter.active() if self.mode == "active" and zone.adapter.available() else None)
+                for entity, zone in self._zones.items()
+            },
+        )
         if current and not active:
             self.estimated_starts += 1
         self._observed_group, self._pump_sample = current, now
@@ -391,10 +408,11 @@ class PWMLoadBalancingManager:
             self.fail("scheduler_exception")
         return self.mode == "active"
 
-    async def save_checkpoint(self) -> None:
+    async def save_checkpoint(self, critical: bool = True) -> None:
         """A failed journal must not authorize an unrecorded heater start."""
         if self.checkpoint is not None:
             try:
+                self.checkpoint_critical = critical
                 await self.checkpoint()
             except Exception as err:
                 raise PWMCheckpointError from err
@@ -453,7 +471,7 @@ class PWMLoadBalancingManager:
                         windows.append(
                             RuntimeWindow(entity, zone.weight, future, duration, future, future, forecast=True)
                         )
-        highest = min(self.members, key=lambda entity: (-self.members[entity], entity))
+        highest = self._highest_weight
         repaired = (
             repair_windows(windows, highest, self.overlap, self._runtime_starts)
             if self.strategy == "minimal"
@@ -470,6 +488,7 @@ class PWMLoadBalancingManager:
         self._runtime_projected_starts = measure_windows(repaired, highest, self.overlap)[0]
 
     async def _reconcile(self, reason: str) -> None:
+        self.reconcile_calls += 1
         now = self._now()
         if any(not z.adapter.available() for z in self._zones.values()):
             self.fail("unavailable_output")
@@ -497,13 +516,18 @@ class PWMLoadBalancingManager:
             ZoneRequest(entity, min(self._period, max(0.0, zone.allocation)), zone.weight)
             for entity, zone in self._zones.items()
         ]
-        self.schedule = plan(requests, self._period, self.overlap, self.strategy)
+        plan_signature = (
+            self._period,
+            self.overlap,
+            self.strategy,
+            tuple((r.entity_id, r.on_seconds, r.weight) for r in requests),
+        )
+        if plan_signature != self._plan_signature:
+            self.schedule = plan(requests, self._period, self.overlap, self.strategy)
+            self._plan_signature = plan_signature
         self.reason = reason
         self._generation += 1
         generation = self._generation
-        if self._cancel is not None:
-            self._cancel()
-            self._cancel = None
         next_times: list[float] = []
         if self._origin is None:
             raise RuntimeError("active PWM group has no origin")
@@ -595,14 +619,37 @@ class PWMLoadBalancingManager:
                     next_times.append(sampled + max(1.0, adapter.minimum_remaining(on, sampled)))
         self._metrics(self._now())
         when = min(t for t in next_times if math.isfinite(t) and t > now)
-        self._next_at = when
+        timer_state = (
+            plan_signature,
+            tuple(
+                (entity, z.target_signature, z.observed_on, z.output_value, z.epoch, z.last_start_epoch, z.priority)
+                for entity, z in self._zones.items()
+            ),
+        )
+        reuse = (
+            self._cancel is not None
+            and self._next_at is not None
+            and abs(when - self._next_at) < 0.000001
+            and self._timer_state == timer_state
+        )
+        self._timer_state = timer_state
+        self._timer_generation = generation
+        if not reuse:
+            if self._cancel is not None:
+                self._cancel()
+            self._next_at = when
+            self._timer_token += 1
+            timer_token = self._timer_token
 
-        def wake() -> None:
-            if generation == self._generation and self.mode == "active":
-                self._task(self.update(next(iter(self._zones)), "timer"))
+            def wake() -> None:
+                if timer_token != self._timer_token:
+                    return
+                self._cancel = None
+                if self._timer_generation == self._generation and self.mode == "active":
+                    self._task(self.update(next(iter(self._zones)), "timer"))
 
-        self._cancel = self._later(max(0.001, when - self._now()), wake)
-        await self.save_checkpoint()
+            self._cancel = self._later(max(0.001, when - self._now()), wake)
+        await self.save_checkpoint(critical=False)
 
     def diagnostics(self, entity_id: str) -> dict[str, object]:
         zone = self._zones.get(entity_id)
@@ -638,4 +685,7 @@ class PWMLoadBalancingManager:
             if entity_id in self._runtime_starts and zone is not None and not zone.adapter.active()
             else None,
             "runtime_plan_reason": self._runtime_reasons.get(entity_id),
+            "hydraulic_consistency": self._hydraulic.diagnostics(self._now(), entity_id)
+            if entity_id in self.members
+            else None,
         }

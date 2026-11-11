@@ -11,6 +11,7 @@ import pytest_asyncio
 
 from custom_components.adaptive_climate.adaptive import persistence
 from custom_components.adaptive_climate.managers import pwm_coordination
+from custom_components.adaptive_climate.managers import pwm_storage
 from test_pwm_ha_integration import Entity, live
 
 
@@ -19,6 +20,8 @@ async def journal(live, monkeypatch):
     disk = SimpleNamespace(
         data=None, fail=False, saves=0, fail_on=None, block=False, entered=asyncio.Event(), release=asyncio.Event()
     )
+    disk.learning = None
+    disk.fail_learning = False
     hass = live.entities[0].hass
     hass.states.get = lambda entity: SimpleNamespace(state=live.state[entity]) if entity in live.state else None
     hass.states.is_state = lambda entity, expected: live.state.get(entity) == expected
@@ -30,10 +33,20 @@ async def journal(live, monkeypatch):
     )
 
     class DiskStore:
+        pwm_write_acknowledged = True
+
+        def __init__(self, key):
+            self.key = key
+
         async def async_load(self):
-            return copy.deepcopy(disk.data)
+            return copy.deepcopy(disk.data if self.key == pwm_storage.STORAGE_KEY else disk.learning)
 
         async def async_save(self, data):
+            if self.key != pwm_storage.STORAGE_KEY:
+                if disk.fail_learning:
+                    raise OSError("learning-store migration marker failed")
+                disk.learning = copy.deepcopy(data)
+                return
             if disk.block:
                 disk.entered.set()
                 await disk.release.wait()
@@ -42,7 +55,8 @@ async def journal(live, monkeypatch):
             disk.data = copy.deepcopy(data)
             disk.saves += 1
 
-    monkeypatch.setattr(persistence, "_create_store", lambda *args: DiskStore())
+    monkeypatch.setattr(persistence, "_create_store", lambda hass, version, key: DiskStore(key))
+    monkeypatch.setattr(pwm_storage, "create_store", lambda hass, key, version: DiskStore(key))
 
     class Restart:
         async def reboot(self, offline=0, bind_all=True):
@@ -240,6 +254,7 @@ async def test_old_uncertain_on_consumes_recovery_period_before_next_ordinary_st
 async def test_storage_failure_blocks_unjournaled_on_and_legacy_bypass(journal):
     live = journal.live
     journal.disk.fail = True
+    journal.advance(1)  # Require a changed active-delivery checkpoint, not a redundant same-time read.
     await live.entities[0].apply()
     assert live.registry.groups[0].reason == "restart_storage_error"
     assert not live.commands
@@ -252,6 +267,7 @@ async def test_storage_failure_stops_existing_on_through_controller(journal):
     live = journal.live
     await live.entities[0].apply()
     journal.disk.fail = True
+    journal.advance(1)  # Active delivery changed: a durable write is now required.
     await live.entities[0].apply()
     assert live.registry.groups[0].reason == "restart_storage_error"
     assert live.state[f"{live.domain}.a"] == "off"
@@ -277,7 +293,7 @@ async def test_invalidation_while_checkpoint_is_awaited_prevents_obsolete_on(jou
 @pytest.mark.asyncio
 async def test_failed_post_on_checkpoint_stops_output_and_does_not_replay_on_restart(journal):
     live = journal.live
-    journal.disk.fail_on = 2
+    journal.disk.fail_on = journal.disk.saves + 2
     await live.entities[0].apply()
     assert live.registry.groups[0].reason == "restart_storage_error"
     assert live.state[f"{live.domain}.a"] == "off"
