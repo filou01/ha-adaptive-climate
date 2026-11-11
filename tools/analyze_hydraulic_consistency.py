@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from bisect import bisect_left
 import csv
+from html import escape
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
@@ -107,6 +108,74 @@ def write_csv(path: Path, rows: list[dict[str, Any]], defaults: list[str]) -> No
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_html(output: Path, summary: dict[str, Any], tz: ZoneInfo) -> None:
+    """Optional static interval report; never runs inside Home Assistant."""
+    parts = [
+        "<!doctype html><meta charset='utf-8'><title>Hydraulic analysis / Hydraulikanalyse</title>",
+        "<style>body{font:16px system-ui;max-width:1120px;margin:32px auto;padding:0 20px;"
+        "color:#183044}table{border-collapse:collapse;width:100%;margin:20px 0}td,th{padding:9px;"
+        "border-bottom:1px solid #d8e2eb;text-align:left}svg{width:100%;background:#f5f8fb}"
+        ".note{color:#536575;font-size:14px}h2{margin-top:40px}</style>",
+        "<h1>Hydraulic analysis / Hydraulikanalyse</h1>",
+        "<p>Reconstructed demand, not measured pump/valve feedback. "
+        "Rekonstruierter Bedarf, keine gemessene Pumpen-/Ventilrückmeldung.</p>",
+    ]
+    for label, dataset in summary["datasets"].items():
+        parts.append(f"<h2>{escape(label)}</h2>")
+        for warning in dataset["warnings"]:
+            parts.append(f"<p class='note'>{escape(warning)}</p>")
+        for group, values in dataset["groups"].items():
+            start, end = values["start"], values["end"]
+            parts.append(f"<h3>{escape(group)} · {iso(start, tz)} – {iso(end, tz)}</h3>")
+            parts.append(
+                f"<p><b>{values['reconstructed_pump_starts']}</b> reconstructed starts / rekonstruierte Starts · "
+                f"<b>{values['pump_runtime_seconds'] / 3600:.2f} h</b> requested runtime / Bedarfslaufzeit</p>"
+            )
+            parts.append(
+                "<table><tr><th>Zone</th><th>HC</th><th>Solo %</th>"
+                "<th>Mean competition (0–1)</th><th>Valid pulses / Gültige Impulse</th></tr>"
+            )
+            for zone, row in values["zones"].items():
+                cells = [escape(zone)] + [
+                    "—" if row[k] is None else f"{row[k]:.3f}"
+                    for k in ("score", "solo_runtime_pct", "mean_competing_load")
+                ]
+                parts.append(
+                    "<tr>"
+                    + "".join(f"<td>{cell}</td>" for cell in cells)
+                    + f"<td>{row['valid_heating_pulses']}</td></tr>"
+                )
+            parts.append(
+                "</table><p class='note'>A high score can describe constant overlap; inspect solo time too. "
+                "Ein hoher Score kann konstante Überlappung beschreiben; Alleinlauf mitprüfen.</p>"
+            )
+            names = list(values["zones"])
+            height = 55 + 42 * len(names)
+            parts.append(f"<svg viewBox='0 0 1000 {height}' role='img' aria-label='Output-state timeline'>")
+            for i, name in enumerate(names):
+                parts.append(f"<text x='4' y='{30 + i * 42}' font-size='12'>{escape(name)}</text>")
+            for pulse in values["pulses"][:3000]:
+                x = 220 + 760 * (pulse["start"] - start) / (end - start)
+                width = max(0.3, 760 * (pulse["end"] - pulse["start"]) / (end - start))
+                y = 14 + 42 * names.index(pulse["entity"])
+                parts.append(
+                    f"<rect x='{x:.3f}' y='{y}' width='{width:.3f}' height='23' fill='#2678ad'>"
+                    f"<title>{escape(pulse['entity'])}: {iso(pulse['start'], tz)} – "
+                    f"{iso(pulse['end'], tz)}</title></rect>"
+                )
+            for fraction in (0, 0.25, 0.5, 0.75, 1):
+                x = 220 + 760 * fraction
+                label_time = datetime.fromtimestamp(start + fraction * (end - start), tz).strftime("%d %H:%M")
+                parts.append(
+                    f"<text x='{x:.0f}' y='{height - 8}' text-anchor='middle' font-size='12'>{label_time}</text>"
+                )
+            parts.append(
+                "</svg><p class='note'>Timeline: first 3000 pulses maximum; CSV retains all pulses. "
+                "Zeitleiste: höchstens die ersten 3000 Impulse; CSV enthält alle.</p>"
+            )
+    (output / "hydraulic-report.html").write_text("\n".join(parts), encoding="utf-8")
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -353,6 +422,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "datasets": reports,
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False), encoding="utf-8")
+    if getattr(args, "html", False):
+        write_html(output, summary, tz)
     if len(labels) == 1:
         (output / "comparison-status.txt").write_text(
             "Only one labeled dataset supplied. No independent-PWM baseline comparison can be established.\n",
@@ -376,6 +447,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--minimum-pulse-seconds", type=float, default=0)
     result.add_argument("--exclusions", help="JSON list of maintenance [start,end] timestamp pairs")
     result.add_argument("--output", required=True)
+    result.add_argument("--html", action="store_true", help="Optional static HTML tables and output-state timeline")
     return result
 
 

@@ -14,26 +14,34 @@ series:
   - entity: sensor.zone_a_hydraulic_consistency
     name: Consistency / Konsistenz
     yaxis_id: percent
+    fill_raw: "null"
     group_by:
+      fill: "null"
       func: last
       duration: 10min
   - entity: sensor.zone_a_solo_heating
     name: Solo heating / Alleinlauf
     yaxis_id: percent
+    fill_raw: "null"
     group_by:
+      fill: "null"
       func: last
       duration: 10min
   - entity: sensor.zone_a_mean_competing_load
     name: Competition / Konkurrenz
     yaxis_id: percent
     transform: return x === null ? null : x * 100;
+    fill_raw: "null"
     group_by:
+      fill: "null"
       func: last
       duration: 10min
   - entity: sensor.zone_a_heating_control_output
     name: Heating output / Heizleistung
     yaxis_id: percent
+    fill_raw: "null"
     group_by:
+      fill: "null"
       func: last
       duration: 10min
 # English: For 7 days change graph_span to 7d and grouping to 1h.

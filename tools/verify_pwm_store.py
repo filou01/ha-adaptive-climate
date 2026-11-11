@@ -13,7 +13,8 @@ from homeassistant.core import HomeAssistant, CoreState
 from homeassistant.helpers import storage
 from homeassistant.util.file import WriteError
 from homeassistant.util.yaml import load_yaml
-from homeassistant.components.template import CONFIG_SCHEMA
+from homeassistant.components.template.config import async_validate_config_section
+from homeassistant.helpers.template import Template
 
 spec = importlib.util.spec_from_file_location(
     "pwm_storage_probe", Path(__file__).parents[1] / "custom_components/adaptive_climate/managers/pwm_storage.py"
@@ -112,7 +113,14 @@ async def main():
             storage.write_utf8_file_atomic = original_writer
         await module.durable_save(store, {"revision": 5})
         assert json.loads(path.read_text())["data"] == {"revision": 5}
-        CONFIG_SCHEMA(load_yaml(str(Path(__file__).parents[1] / "examples/pwm-hydraulic-sensors.yaml")))
+        example = load_yaml(str(Path(__file__).parents[1] / "examples/pwm-hydraulic-sensors.yaml"))
+        availability_expression = example["template"][0]["sensor"][0]["availability"]
+        for section in example["template"]:
+            await async_validate_config_section(hass, section)
+        availability = Template(availability_expression, hass)
+        for value, expected in ((None, False), ({}, False), ({"score": 0}, True), ({"score": 100}, True)):
+            hass.states.async_set("climate.zone_a", "heat", {"pwm_coordination": {"hydraulic_consistency": value}})
+            assert availability.async_render() is expected
         hass.state = CoreState.stopping
         await rejected({"revision": 6})  # HA defers this; no ON may rely on it.
         assert json.loads(path.read_text())["data"] == {"revision": 5}
@@ -128,6 +136,7 @@ async def main():
                     "real_permission_failure": permission_result,
                     "exact_payload_acknowledgement": "PASS",
                     "template_yaml_schema": "PASS",
+                    "template_availability_and_zero_score": "PASS",
                     "stored_bytes": path.stat().st_size,
                 }
             )
