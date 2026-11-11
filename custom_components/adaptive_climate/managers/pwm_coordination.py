@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable, Coroutine
@@ -156,6 +157,7 @@ class PWMCoordinationRegistry:
         self.groups: list[PWMLoadBalancingManager] = []
         self._store: LearningDataStore | None = None
         self._journal: Any = None
+        self._initialization_lock = asyncio.Lock()
         self._journals: dict[str, Any] = {}
         self._by_entity: dict[str, PWMLoadBalancingManager] = {}
         self._adapters: dict[str, HAZoneAdapter] = {}
@@ -177,6 +179,18 @@ class PWMCoordinationRegistry:
 
     async def async_initialize(self, store: LearningDataStore) -> None:
         """Restore the group journals before zone entities bind."""
+        async with self._initialization_lock:
+            if self._store is not None:
+                return
+            try:
+                await self._async_initialize_locked(store)
+            except asyncio.CancelledError:
+                self._store = None
+                self._journal = None
+                raise
+
+    async def _async_initialize_locked(self, store: LearningDataStore) -> None:
+        """Publish initialized callbacks only after migration barriers finish."""
         from .pwm_restart import restore
 
         if self._store is not None:

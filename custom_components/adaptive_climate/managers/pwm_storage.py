@@ -47,16 +47,18 @@ def create_store(hass: Any, key: str, version: int) -> Any:
 
     class AcknowledgedStore(Store):
         _completed_writes = 0
+        _last_successful_payload: Any = None
         pwm_write_acknowledged = True
 
         async def _async_write_data(self, data: dict) -> None:
             await super()._async_write_data(data)
             self._completed_writes += 1
+            self._last_successful_payload = data.get("data")
 
         async def async_save(self, data: Any) -> None:
             completed = self._completed_writes
             await super().async_save(data)
-            if self._completed_writes == completed:
+            if self._completed_writes == completed or self._last_successful_payload is not data:
                 raise RuntimeError("PWM journal write was not acknowledged by HA Store")
 
     return AcknowledgedStore(hass, version, key, atomic_writes=True)

@@ -12,6 +12,8 @@ import threading
 from homeassistant.core import HomeAssistant, CoreState
 from homeassistant.helpers import storage
 from homeassistant.util.file import WriteError
+from homeassistant.util.yaml import load_yaml
+from homeassistant.components.template import CONFIG_SCHEMA
 
 spec = importlib.util.spec_from_file_location(
     "pwm_storage_probe", Path(__file__).parents[1] / "custom_components/adaptive_climate/managers/pwm_storage.py"
@@ -52,6 +54,7 @@ async def main():
         assert path.read_bytes() == original_bytes
 
         # A genuine OS permission failure, rather than a mocked Store exception.
+        permission_result = "not_run_root_or_nonposix"
         if os.name == "posix" and os.geteuid() != 0:
             parent = path.parent
             parent.chmod(0o500)
@@ -60,6 +63,7 @@ async def main():
             finally:
                 parent.chmod(0o700)
             assert path.read_bytes() == original_bytes
+            permission_result = "PASS"
 
         entered, release = threading.Event(), threading.Event()
 
@@ -71,6 +75,27 @@ async def main():
 
         storage.write_utf8_file_atomic = suspended_writer
         try:
+            # A queued delayed callback can consume the next explicit payload.
+            # An OLDER successful write must not acknowledge that payload if
+            # serialization of the newer payload subsequently fails.
+            older = asyncio.create_task(store.async_save({"revision": 10}))
+            await asyncio.wait_for(asyncio.to_thread(entered.wait), 5)
+            delayed = asyncio.create_task(store._async_handle_write_data())
+            await asyncio.sleep(0)
+            bad = asyncio.create_task(store.async_save({"bad": object()}))
+            await asyncio.sleep(0)
+            release.set()
+            await older
+            await delayed
+            try:
+                await bad
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("An old write cannot acknowledge a newer failed payload")
+            assert json.loads(path.read_text())["data"] == {"revision": 10}
+            entered.clear()
+            release.clear()
             task = asyncio.create_task(module.durable_save(store, {"revision": 4}))
             await asyncio.wait_for(asyncio.to_thread(entered.wait), 5)
             task.cancel()
@@ -87,6 +112,7 @@ async def main():
             storage.write_utf8_file_atomic = original_writer
         await module.durable_save(store, {"revision": 5})
         assert json.loads(path.read_text())["data"] == {"revision": 5}
+        CONFIG_SCHEMA(load_yaml(str(Path(__file__).parents[1] / "examples/pwm-hydraulic-sensors.yaml")))
         hass.state = CoreState.stopping
         await rejected({"revision": 6})  # HA defers this; no ON may rely on it.
         assert json.loads(path.read_text())["data"] == {"revision": 5}
@@ -99,6 +125,9 @@ async def main():
                     "enospc_fault_injection": "PASS",
                     "cancelled_executor_write_drained": "PASS",
                     "shutdown_deferred_write_rejected": "PASS",
+                    "real_permission_failure": permission_result,
+                    "exact_payload_acknowledgement": "PASS",
+                    "template_yaml_schema": "PASS",
                     "stored_bytes": path.stat().st_size,
                 }
             )

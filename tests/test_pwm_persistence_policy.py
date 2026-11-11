@@ -111,3 +111,35 @@ async def test_dedicated_checkpoints_never_rewrite_learning_dataset(journal):
         await journal.live.entities[0].apply()
     assert journal.disk.learning == learning
     assert "zones" not in journal.disk.data  # Only per-group journal rows, not learner histories.
+
+
+@pytest.mark.asyncio
+async def test_cancelled_initialization_waiter_retries_fully_before_binding(journal, monkeypatch):
+    from custom_components.adaptive_climate.managers.pwm_coordination import PWMCoordinationRegistry
+
+    registry = PWMCoordinationRegistry(journal.live.entities[0].hass, journal.live.config)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = pwm_storage.PWMJournalStore.async_load
+    calls = 0
+
+    async def load(store):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered.set()
+            await release.wait()
+        return await original(store)
+
+    monkeypatch.setattr(pwm_storage.PWMJournalStore, "async_load", load)
+    first = asyncio.create_task(registry.async_initialize(journal.store))
+    await entered.wait()
+    second = asyncio.create_task(registry.async_initialize(journal.store))
+    await asyncio.sleep(0)
+    assert not second.done()
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    await asyncio.wait_for(second, 1)
+    assert calls == 2
+    assert registry._store is journal.store
+    assert all(group.checkpoint is not None for group in registry.groups)

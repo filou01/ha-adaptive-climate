@@ -82,7 +82,7 @@ def load_events(paths: list[Path], aliases: dict[str, str]) -> tuple[list[Any], 
 
 
 def rolling_max(starts: list[float], start: float, end: float, seconds: float) -> dict[str, Any]:
-    """Exact maximum on fully observed elapsed-time windows [start, end)."""
+    """Exact count maximum on elapsed windows within the requested extent."""
     if end - start < seconds:
         return {"starts": None, "reason": "insufficient_elapsed_window", "window_seconds": seconds}
     candidates = {start, end - seconds, *(t for t in starts if start <= t <= end - seconds)}
@@ -137,9 +137,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         events, warnings, duplicates = load_events(paths, aliases)
         if not events:
             raise ValueError(f"Dataset {label} contains no mapped events")
-        start = timestamp(args.start) if args.start else min(e.time for e in events)
-        end = timestamp(args.end) if args.end else max(e.time for e in events)
-        if not args.start or not args.end:
+        metadata = config.get("datasets", {}).get(label, {})
+        start_value = args.start or metadata.get("start")
+        end_value = args.end or metadata.get("end")
+        start = timestamp(start_value) if start_value else min(e.time for e in events)
+        end = timestamp(end_value) if end_value else max(e.time for e in events)
+        if not start_value or not end_value:
             warnings.append("Inferred dataset boundaries; edge pulses are censored, export coverage is not established")
         if not config.get("continuity_verified", False):
             warnings.append(
@@ -185,6 +188,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 )
             result["rolling_24h_max"] = rolling_max(starts, start, end, 86400)
             result["rolling_7d_max"] = rolling_max(starts, start, end, 604800)
+            for maximum in (result["rolling_24h_max"], result["rolling_7d_max"]):
+                if maximum["starts"] is not None:
+                    covered = CORE.analyze(
+                        group_events,
+                        weights,
+                        timestamp(maximum["start"]),
+                        timestamp(maximum["end"]),
+                        initial,
+                        exclusions,
+                    )["pump_known_seconds"]
+                    maximum["known_state_seconds"] = covered
+                    maximum["complete_state_coverage"] = abs(covered - maximum["window_seconds"]) < 1e-6
+                    maximum["count_is_lower_bound"] = not maximum["complete_state_coverage"] or not config.get(
+                        "continuity_verified", False
+                    )
             result["average_starts_per_24h_known_time"] = (
                 len(starts) * 86400 / result["pump_known_seconds"] if result["pump_known_seconds"] else None
             )
@@ -254,6 +272,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                                 "group": group,
                                 "zone": name,
                                 "window": window,
+                                "full_window": stop - begin == seconds,
+                                "requested_window_seconds": seconds,
                                 "start": iso(begin),
                                 "end": iso(stop),
                                 **values,
