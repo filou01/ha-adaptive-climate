@@ -97,7 +97,10 @@ Competing-load changes count changes within active pulses, not their start/end.
 Aggregate weighted overlap is `integral sum(i<j) w_i*w_j*ON_i*ON_j dt`.
 It has units of relative weight squared times seconds, not litres or energy.
 
-A score needs at least **60 valid active seconds and two complete valid pulses**.
+A score needs at least **60 valid active seconds and one complete valid pulse**,
+or **900 valid active seconds** for long continuous/boundary-censored heating.
+Inter-pulse variation remains unavailable until two valid observed pulse fragments
+exist; one long pulse can establish constant competition, not inter-pulse repeatability.
 Otherwise `score: null` / `status: insufficient_data` is returned. Constant solo
 operation and constant overlap can both score 100; always inspect solo percent,
 mean competition, variation, load changes, pulse count and coverage together.
@@ -134,6 +137,24 @@ python tools/analyze_hydraulic_consistency.py \
   --minimum-pulse-seconds 1 --output analysis
 ```
 
+Add `--html` for an optional static report with tables and an output-state
+interval timeline. This report runs entirely offline. On platforms without a
+system timezone database, install Python's `tzdata` package.
+
+The mapping can set independent windows without separate invocations:
+
+```json
+{"datasets": {
+  "baseline": {"start": "2026-10-24T00:00:00+02:00", "end": "2026-10-25T00:00:00+02:00"},
+  "coordinated": {"start": "2026-10-25T00:00:00+02:00", "end": "2026-10-26T00:00:00+01:00"}
+}}
+```
+
+`--start`/`--end` override these windows. Optional `initial_states` maps input
+entity IDs to `on`/`off` seeds before the event stream; earlier CSV events advance
+these seeds before the analysis start. Put a timed initial snapshot in the CSV
+when its timestamp matters.
+
 The sample dates illustrate DST handling, not a claim about installed versions.
 For datasets covering different dates, run each with its actual window and use
 explicit labels; do not force common timestamps onto unrelated periods. `--input`
@@ -158,7 +179,7 @@ its warning retained. Optional `coverage` intervals require an actual known
 initial event at their start; `maintenance_exclusions`/`--exclusions` explicitly
 remove known outages. Hidden downtime cannot be reconstructed from event CSVs.
 
-Outputs: the six requested daily/per-zone/pulse/comparison CSVs and `summary.json`,
+Outputs: the five requested daily/per-zone/pulse/comparison CSVs and `summary.json`,
 plus `pump_starts_rolling.csv` and `hydraulic_consistency_rolling.csv`.
 Rolling maxima include their actual comparison windows. ON/OFF duration averages
 use only complete spells, not censored boundaries. Whole-period daily/weekly
@@ -265,8 +286,12 @@ Offline-Mapping bevorzugt expliziten Nenndurchfluss, dann Kreiszahlen, dann
 relatives Gewicht. Hydraulisch unabhängige Gruppen getrennt halten.
 
 Die englische Formel oben definiert den Score und die gewichteten Momente
-vollständig. Ein Score benötigt mindestens 60 gültige aktive Sekunden und zwei
-vollständige gültige Impulse. Sonst ist er nicht verfügbar. Konstante Überlappung
+vollständig. Ein Score benötigt mindestens 60 gültige aktive Sekunden und einen
+vollständigen gültigen Impuls oder 900 gültige aktive Sekunden bei langem
+Dauerbetrieb beziehungsweise Randimpulsen. Die Variation zwischen Impulsen bleibt
+bis zu zwei gültigen beobachteten Impulsfragmenten nicht verfügbar. Ein einzelner
+langer Impuls belegt konstante Konkurrenz, keine Wiederholbarkeit zwischen Impulsen.
+Unterhalb dieser Grenzen ist der Score nicht verfügbar. Konstante Überlappung
 kann ebenso 100 ergeben wie konstanter Alleinlauf. Deshalb immer Alleinlauf,
 mittlere Konkurrenzlast, Variation innerhalb/zwischen Impulsen, Lastwechsel,
 Abdeckung und Impulszahl zusammen betrachten. Gewichtete Überlappung ist die
@@ -315,6 +340,13 @@ dieser Snapshots.
 
 ### Prüfung und Installation
 
+`--html` ergänzt einen rein offline erzeugten Tabellenbericht mit Zeitband.
+Bei fehlender System-Zeitzonendatenbank wird das Python-Paket `tzdata` benötigt.
+Das Mapping kann unter `datasets` je Datensatz eigene `start`-/`end`-Werte setzen;
+CLI-Grenzen überschreiben diese. `initial_states` sind Startwerte vor dem
+Ereignisstrom. Frühere CSV-Ereignisse schreiben sie bis zum Auswertungsbeginn fort.
+Zeitlich bestimmte Anfangszustände gehören als Ereignisse in die CSV.
+
 Die Benchmarks vergleichen zwölf synthetische 24h-Verläufe mit der eingefrorenen
 Ausgangsversion und prüfen alle Ausgangswechsel und Zeitkonten. Bytewerte sind
 serialisierte JSON-Nutzlasten, keine gemessenen Flash-Schreibzyklen. Der echte
@@ -326,3 +358,6 @@ Zeitkonten kontrollieren. Für Diagnosen gültige Impulse abwarten. Fehlende neu
 Journale nicht durch Entfernen des Markers umgehen. Vor Rückkehr zu älterem
 Code Zonen sicher stoppen und beide Stores/Sicherungen behalten: das alte
 Legacy-Journal ist nach Weiterbetrieb veraltet. Kein Lernreset ist erforderlich.
+
+
+[Measured validation / Gemessene Validierung](pwm-optimization-validation.md)

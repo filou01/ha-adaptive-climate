@@ -1,0 +1,11 @@
+entity_id,state,last_changed
+switch.zone_a,off,2025-01-01T00:00:00Z
+switch.zone_b,off,2025-01-01T00:00:00Z
+switch.zone_a,on,2025-01-01T00:00:10Z
+switch.zone_b,on,2025-01-01T00:01:00Z
+switch.zone_a,off,2025-01-01T00:01:50Z
+switch.zone_b,off,2025-01-01T00:01:50Z
+switch.zone_a,on,2025-01-01T00:03:30Z
+switch.zone_b,on,2025-01-01T00:04:20Z
+switch.zone_a,off,2025-01-01T00:05:10Z
+switch.zone_b,off,2025-01-01T00:05:10Z

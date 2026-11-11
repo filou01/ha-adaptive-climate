@@ -88,7 +88,10 @@ def test_long_unchanged_on_is_not_missing_but_is_boundary_censored():
     assert r["reconstructed_pump_starts"] == 0
     assert r["coverage_seconds"] == 604800
     assert len(r["pulses"]) == 1
-    assert r["zones"]["a"]["score"] is None
+    assert r["zones"]["a"]["score"] == 100
+    assert r["zones"]["a"]["inter_pulse_variation"] is None
+    assert r["zones"]["a"]["incomplete_heating_pulses"] == 1
+    assert analyze([], {"a": 1}, 0, 60, {"a": True})["zones"]["a"]["score"] is None
 
 
 def test_short_pulses_are_retained_and_flagged_not_filtered():

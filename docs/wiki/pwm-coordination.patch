@@ -1,0 +1,38 @@
+--- a/Multi-Zone-Coordination.md
++++ b/Multi-Zone-Coordination.md
+@@ -685,3 +685,35 @@
+ ---
+ 
+ [← Back to Home](Home) | [Energy Optimization →](Energy-Optimization)
++
++
++## Optional pump-aware PWM coordination
++
++Pump-aware PWM groups coordinate already-earned HEAT pulses sharing a circulation
++pump. They are disabled by default. `minimal` reduces interruptions by chaining
++pulses; `maximal` concentrates their energized window. These are separate goals:
++neither strategy guarantees fewer starts, shorter runtime or lower energy in
++every load profile. Hydraulic weights prefer solo time for larger zones while
++minimum times, deferral, priority and restart accounting remain authoritative.
++
++PWM restart journals use the compact `adaptive_climate_pwm_coordination` HA Store.
++Migration persists the new journal before marking the learning Store; original
++learning data are retained. Safety-critical writes remain awaited. After migration,
++a missing dedicated journal blocks coordinated ON instead of restoring stale data.
++Back up before upgrade; safely stop groups before rolling back to code that cannot
++read the new journal. Do not delete the migration marker as a recovery shortcut.
++
++The existing `pwm_coordination` diagnostics include Hydraulic Consistency, solo
++time, competing load, pulse variation and coverage. HC describes the variability
++of relative competing hydraulic weight; stable solo operation and stable overlap
++can both score 100. It is not measured flow, physical valve position or proof of
++better learning. Collection resets on restart. Optional Template sensors and
++ApexCharts examples use Recorder/InfluxDB without a second critical journal.
++
++See the repository documentation for configuration, supported topology, exact
++formulas, CSV history analysis, genuine rolling 24h/7d evaluation, test plans and
++measured synthetic benchmarks:
++
++- [Pump-aware PWM](https://github.com/afewyards/ha-adaptive-climate/blob/main/docs/pump-aware-pwm.md)
++- [Persistence and hydraulics](https://github.com/afewyards/ha-adaptive-climate/blob/main/docs/pwm-persistence-and-hydraulics.md)
++- [Validation](https://github.com/afewyards/ha-adaptive-climate/blob/main/docs/pwm-optimization-validation.md)

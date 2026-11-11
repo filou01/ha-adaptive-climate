@@ -59,6 +59,35 @@ def test_flow_circuit_weight_priority_and_validation():
         cli.weight({"weight": True})
 
 
+def test_csv_fixture_matches_independently_calculated_overlap():
+    path = Path(__file__).parent / "fixtures/hydraulic_history/partial_overlap.csv"
+    events, warnings, duplicates = cli.load_events([path], {"switch.zone_a": "a", "switch.zone_b": "b"})
+    start = cli.timestamp("2025-01-01T00:00:00Z")
+    result = cli.CORE.analyze(events, {"a": 4, "b": 1}, start, start + 400)
+    assert not warnings and duplicates == 0
+    assert result["reconstructed_pump_starts"] == 2
+    assert result["pump_runtime_seconds"] == 200
+    assert result["zones"]["a"]["score"] == pytest.approx(80)
+    assert result["weighted_overlap_seconds"] == 400
+
+
+def test_local_midnight_does_not_split_whole_period_pulses():
+    start = cli.timestamp("2026-10-24T23:00:00+02:00")
+    end = cli.timestamp("2026-10-25T01:00:00+02:00")
+    events = [
+        cli.CORE.HydraulicEvent(cli.timestamp(t), "a", state)
+        for t, state in [("2026-10-24T23:50:00+02:00", True), ("2026-10-25T00:10:00+02:00", False)]
+    ]
+    result = cli.CORE.analyze(events, {"a": 1}, start, end, {"a": False})
+    assert len(result["pulses"]) == 1
+    assert result["pulses"][0]["duration_seconds"] == 1200
+    days = [
+        cli.CORE.analyze(events, {"a": 1}, a, b, {"a": False})
+        for _, a, b in cli.calendar_windows(start, end, ZoneInfo("Europe/Vienna"))
+    ]
+    assert [day["pump_runtime_seconds"] for day in days] == [600, 600]
+
+
 def test_multi_file_multi_group_7d_and_explicit_comparison(tmp_path):
     mapping = {
         "continuity_verified": True,

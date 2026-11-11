@@ -51,10 +51,12 @@ def analyze(
 ) -> dict[str, Any]:
     """Integrate simultaneous events atomically, treating unknowns explicitly.
 
-    A score needs >=60 valid active seconds and >=2 complete valid pulses.
+    A score needs >=60 valid active seconds and a complete valid pulse, or
+    >=900 valid active seconds for a still-running/boundary-censored pulse.
     No OFF state is invented before the first event. Events before start can
     establish its state but never manufacture a boundary start. Initial values
-    are verified states immediately before start. End is exclusive.
+    seed the event stream; recorded pre-start events advance them. A timed
+    initial-state snapshot should be supplied as an event. End is exclusive.
     """
     if not isfinite(start) or not isfinite(end) or end <= start:
         raise ValueError("Expected finite start < end")
@@ -186,19 +188,21 @@ def analyze(
             duration = pulse["valid_seconds"]
             pulse_means.add(pulse["mean_competing_load"], duration)
             within += duration * pulse["intra_pulse_variation"] ** 2
-        sufficient = moments.seconds >= 60 and valid_pulses >= 2
+        observed_pulses = sum(p["valid_seconds"] > 0 for p in pulses[entity])
+        sufficient = moments.seconds >= 60 and (valid_pulses >= 1 or moments.seconds >= 900)
         summaries[entity] = {
             "status": "ok" if sufficient else "insufficient_data",
             "score": max(0.0, min(100.0, 100 * (1 - 2 * sqrt(moments.variance)))) if sufficient else None,
             "solo_runtime_pct": 100 * solo[entity] / moments.seconds if moments.seconds else None,
             "mean_competing_load": moments.mean if moments.seconds else None,
             "intra_pulse_variation": sqrt(within / moments.seconds) if moments.seconds else None,
-            "inter_pulse_variation": sqrt(pulse_means.variance) if pulse_means.seconds else None,
+            "inter_pulse_variation": sqrt(pulse_means.variance) if observed_pulses >= 2 else None,
             "competing_load_changes": load_changes[entity],
             "observation_duration_seconds": moments.seconds,
             "observation_window_hours": (end - start) / 3600,
             "valid_heating_pulses": valid_pulses,
             "total_heating_pulses": len(pulses[entity]),
+            "incomplete_heating_pulses": len(pulses[entity]) - valid_pulses,
             "solo_seconds": solo[entity],
             "sum_r_seconds": moments.total,
             "sum_r2_seconds": moments.squares,
