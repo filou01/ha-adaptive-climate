@@ -83,6 +83,18 @@ datasets and their actual windows. No personal production histories are committe
 A missing independent baseline or less than seven days of coverage must remain
 unavailable; neither version labels nor missing observations are inferred from dates.
 
+Reproduce those controlled comparisons without private data:
+
+```sh
+PWM_REPLAY_OUTPUT=replay-json pytest tests/test_pwm_simulation.py
+python tools/analyze_pwm_replays.py --input replay-json --output replay-analysis
+```
+
+The exporter supplies verified initial OFF states from the simulation; its dates
+are synthetic anchors. The resulting per-case CSV/JSON/HTML uses explicit labels.
+The [eight-case comparison CSV](benchmarks/pwm-optimization/controlled-comparison.csv)
+contains the complete synthetic comparison, including counterexamples.
+
 ### File-by-file review map
 
 | Files | Review purpose |
@@ -94,6 +106,7 @@ unavailable; neither version labels nor missing observations are inferred from d
 | `helpers/hydraulic_metrics.py` | Shared interval moments, pulse/coverage logic, bounded live collection. |
 | `tools/analyze_hydraulic_consistency.py` | Offline labeled CSV/daily/rolling comparison and optional HTML report. |
 | `tools/report_pwm_benchmarks.py` | Exact behavioral comparison and reproducible synthetic evidence. |
+| `tools/analyze_pwm_replays.py` | Reproduce independent/coordinated comparisons from actual regression-controller exports. |
 | `tools/verify_pwm_store.py` | Real HA storage failures, race/cancellation/shutdown probe, real Template validation. |
 | `tests/pwm_benchmark_support.py`, `test_pwm_persistence_benchmark.py` | Opt-in 12-trace counting benchmark. |
 | `tests/test_pwm_persistence_policy.py`, `test_pwm_restart.py`, `test_learning_startup.py` | Migration, restart phases, failures, shared initialization and unchanged learner data. |
@@ -173,6 +186,11 @@ Store und Migration, gemeinsame Initialisierung, Plan-/Timerwiederverwendung,
 gemeinsamer Metrikkern, Offline-Werkzeuge, Regressionen und optionale HA-Beispiele.
 Der aktuelle Hauptzweig 0.67.1 ist integriert; dessen Befehlsbestätigungstimer und
 die Versionssicherung dieses Features bleiben beide erhalten.
+
+Die Befehle oben exportieren die acht synthetischen Controller-Vergleiche und
+erzeugen daraus CSV/JSON/HTML. Die Ausgangszustände sind aus der Simulation
+bekannt; Zeitstempel sind synthetische Anker. Die verlinkte Vergleichs-CSV enthält
+auch die Gegenbeispiele, ohne private Daten.
 
 Linux prüft die gesamte Suite unter Python 3.11/3.12 mit Ruff und Pyright. Der
 separate echte HA-Store-Test unter HA 2026.11.0 prüft Schreibbestätigung,

@@ -1,0 +1,9 @@
+trace,kind,independent_starts,independent_runtime_seconds,independent_high_weight_score,independent_high_weight_solo_pct,independent_weighted_overlap,coordinated_starts,coordinated_runtime_seconds,coordinated_high_weight_score,coordinated_high_weight_solo_pct,coordinated_weighted_overlap
+1440-1080-1080-1440-maximal-fixed,controlled same-demand electrical replay; not historical measurement,1,86400.0,80.63508326896292,62.5,73440.0,24,34560.0,80.2051336277843,0.0,423360.0
+1440-1080-1080-1440-maximal-interactive,controlled same-demand electrical replay; not historical measurement,19,64080.0,69.7180943857012,31.48148148148148,223680.0,22,39900.0,69.30498421694257,12.34991423670669,372780.0
+1440-1080-1080-1440-minimal-fixed,controlled same-demand electrical replay; not historical measurement,1,86400.0,80.63508326896292,62.5,73440.0,1,86400.0,81.24434241733911,67.36111111111111,68160.0
+1440-1080-1080-1440-minimal-interactive,controlled same-demand electrical replay; not historical measurement,19,64080.0,69.7180943857012,31.48148148148148,223680.0,3,85440.0,82.11463027398526,72.37654320987654,71580.0
+720-720-720-720-maximal-fixed,controlled same-demand electrical replay; not historical measurement,96,69120.0,100.0,100.0,0.0,24,17280.0,99.99999817498792,0.0,259200.0
+720-720-720-720-maximal-interactive,controlled same-demand electrical replay; not historical measurement,54,52080.0,72.63020701296433,40.476190476190474,114240.0,23,30960.0,57.26984154895916,46.15384615384615,226800.0
+720-720-720-720-minimal-fixed,controlled same-demand electrical replay; not historical measurement,96,69120.0,100.0,100.0,0.0,24,51840.0,81.14381916835873,66.66666666666667,34560.0
+720-720-720-720-minimal-interactive,controlled same-demand electrical replay; not historical measurement,54,52080.0,72.63020701296433,40.476190476190474,114240.0,23,62640.0,82.9014756073176,77.57936507936508,39240.0
