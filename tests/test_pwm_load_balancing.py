@@ -315,7 +315,9 @@ async def test_removal_revokes_saved_callback():
 async def test_120_minute_period_does_not_defer_priority(trigger):
     sim = Simulation((2880, 2160, 2160, 2880), period=7200)
     await sim.update()
-    await sim.advance(7200 + 1020)
+    # Executable repair may legitimately reorder the ordinary pulses. Trigger
+    # priority after the preceding pulse ends, rather than assuming its old phase.
+    await sim.advance(7200 + 3000)
     zone = sim.zones[3]
     assert not zone.on
     assert sim.manager.schedule.phases[zone.entity_id] > 3600

@@ -12,6 +12,7 @@ from test_pwm_load_balancing import Simulation
 from test_pwm_ha_integration import live
 from custom_components.adaptive_climate.managers.pwm_runtime_planner import (
     RuntimeWindow,
+    execution_metrics,
     measure_windows,
     repair_windows,
 )
@@ -268,11 +269,11 @@ def test_bounded_repair_preserves_constraints_and_never_worsens_metrics(seed):
                 str(index), 4 if index == 0 else 1, start, rng.randrange(300, 1800), earliest, latest, index % 3 != 0
             )
         )
-    before = measure_windows(windows, "0", 240)
+    before = execution_metrics(windows, "0", 240)
     clock = perf_counter()
     repaired = repair_windows(windows, "0", 240, {})
     elapsed = perf_counter() - clock
-    assert measure_windows(repaired, "0", 240) <= before
+    assert execution_metrics(repaired, "0", 240) <= before
     assert repair_windows(windows, "0", 240, {}) == repaired
     for old, new in zip(windows, repaired):
         assert new.duration == old.duration

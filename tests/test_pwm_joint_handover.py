@@ -8,6 +8,7 @@ from test_pwm_load_balancing import Simulation
 from custom_components.adaptive_climate.managers.pwm_load_balancing_optimizer import ZoneRequest, plan
 from custom_components.adaptive_climate.managers.pwm_runtime_planner import (
     RuntimeWindow as W,
+    execution_metrics,
     measure_windows,
     repair_windows,
 )
@@ -49,7 +50,7 @@ def test_joint_repair_never_moves_a_committed_start(fixed_kind):
     ]
     result = repair_windows(windows, "large", 120, {})
     assert result[2] == windows[2]
-    assert measure_windows(result, "large", 120) <= measure_windows(windows, "large", 120)
+    assert execution_metrics(result, "large", 120) <= execution_metrics(windows, "large", 120)
 
 
 def test_joint_repair_respects_tight_latest_start_and_never_adds_a_pulse():
@@ -62,14 +63,14 @@ def test_joint_repair_respects_tight_latest_start_and_never_adds_a_pulse():
     assert len(result) == len(windows)
     assert result[0] == windows[0] and result[2] == windows[2]
     assert 0 <= result[1].start <= 100
-    assert measure_windows(result, "large", 120) <= measure_windows(windows, "large", 120)
+    assert execution_metrics(result, "large", 120) <= execution_metrics(windows, "large", 120)
 
 
 def test_zero_target_and_short_pulses_keep_valid_finite_windows():
     windows = [W("a", 4, 1, 10, 0, 100, True), W("b", 1, 0, 2, 0, 100, True), W("c", 1, 1, 3, 1, 1)]
     for overlap in (0, 120):
         result = repair_windows(windows, "a", overlap, {})
-        assert measure_windows(result, "a", overlap) <= measure_windows(windows, "a", overlap)
+        assert execution_metrics(result, "a", overlap) <= execution_metrics(windows, "a", overlap)
         assert all(replace(new, start=old.start) == old for old, new in zip(windows, result))
 
 

@@ -60,8 +60,8 @@ def repair_windows(
     """Two coordinate passes plus a bounded joint-chain neighborhood.
 
     Candidate endpoints align a real pulse with another real/forecast interval.
-    Union starts outrank handover targets and concurrency, then movement breaks
-    ties. Frozen starts (active, priority, continuous, forecast) never move.
+    Real union starts and handover targets outrank excess concurrency. Forecasts
+    only break ties between executable plans. Frozen starts never move.
     This bounded local repair is not a claim of a global combinatorial optimum.
     """
     if len(windows) > 16:
@@ -79,9 +79,13 @@ def repair_windows(
     preferred = {w.entity_id: previous.get(w.entity_id, w.start) for w in windows if w.movable}
 
     def score(candidate: list[RuntimeWindow]) -> tuple[float, ...]:
-        metrics = measure_windows(candidate, highest, overlap)
         movement = sum(abs(w.start - preferred[w.entity_id]) for w in candidate if w.movable)
-        return (*metrics, movement, *(w.start for w in sorted(candidate, key=lambda w: w.entity_id)))
+        return (
+            *execution_metrics(candidate, highest, overlap),
+            *measure_windows(candidate, highest, overlap),
+            movement,
+            *(w.start for w in sorted(candidate, key=lambda w: w.entity_id)),
+        )
 
     best = list(windows)
     best_score = score(best)
@@ -153,3 +157,22 @@ def repair_windows(
                 if remaining_trials == 0:
                     return best
     return best
+
+
+def execution_metrics(windows: list[RuntimeWindow], highest: str, overlap: float) -> tuple[float, ...]:
+    """Rank real heat before advisory opportunities and zone-weight preferences.
+
+    Excess pair overlap is unweighted: moving it from a large zone to two small
+    zones must not count as better serialization. Fixed active intervals remain
+    part of the score but cannot be shortened or shifted by the repair.
+    """
+    real = [w for w in windows if not w.forecast]
+    starts, shortfall, high, weighted = measure_windows(real, highest, overlap)
+    excess = sum(
+        max(0.0, min(a.end, b.end) - max(a.start, b.start) - min(overlap, a.duration, b.duration))
+        for index, a in enumerate(real)
+        for b in real[index + 1 :]
+    )
+    # Sub-millisecond subtraction noise must not outweigh a real improvement
+    # in a later objective or make equal handovers registration-order dependent.
+    return tuple(round(value, 6) for value in (starts, shortfall, excess, high, weighted))

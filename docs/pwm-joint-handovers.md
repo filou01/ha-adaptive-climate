@@ -2,6 +2,8 @@
 
 ## English
 
+For the subsequent objective correction, see [real serialization](pwm-real-serialization.md). The unchanged-objective description below refers specifically to preview 10.
+
 Preview 10 on the fork test branch adds a bounded joint-move neighborhood to
 the existing executable repair. Preview 9 could retain almost simultaneous small
 zone starts even when a valid chain had the same pump start count and heat grants.
@@ -67,6 +69,8 @@ or original PR code requires the older-code migration precautions in the
 [persistence guide](pwm-persistence-and-hydraulics.md).
 
 ## Deutsch
+
+Die anschließende Korrektur der Zielbewertung steht unter [Staffelung realer Anforderungen](pwm-real-serialization.md). Die unten beschriebene unveränderte Zielreihenfolge gilt für Testversion 10.
 
 Vorabversion 10 im eigenen Testzweig ergänzt begrenzte gemeinsame Verschiebungen
 zweier ungestarteter Impulse. In Version 9 konnte der Planer parallele kleine
