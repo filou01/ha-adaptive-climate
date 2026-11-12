@@ -60,7 +60,7 @@ explicitly for two minutes.
   ordinary start. Separately distinguish post-start PID revisions from
   initially planned excess. Helper edges are not physical pump feedback.
 
-This page documents a fix on the fork test branch, not a published release.
+Available in fork test release `v0.67.1-pwm.11` on `test/pwm-storage-hydraulics`.
 See [joint handovers](https://github.com/filou01/ha-adaptive-climate/blob/test/pwm-storage-hydraulics/docs/pwm-joint-handovers.md) for the existing search and
 [the general test plan](https://github.com/filou01/ha-adaptive-climate/blob/test/pwm-storage-hydraulics/docs/pump-aware-pwm-test-plan.md) for activation/rollback.
 
@@ -117,6 +117,6 @@ Start geplante Überlappung von späteren PID-Änderungen unterscheiden. Helper
 sind keine physische Pumpenrückmeldung. Aktivierung und Rückkehr beschreibt
 der verlinkte allgemeine Testplan.
 
-Diese Seite beschreibt einen Fix im eigenen Testzweig, keine veröffentlichte
-Release. Die ursprüngliche gemeinsame Suche steht in der verlinkten
+Verfügbar als eigene Testversion `v0.67.1-pwm.11` im Zweig
+`test/pwm-storage-hydraulics`. Die ursprüngliche gemeinsame Suche steht in der verlinkten
 Dokumentation zu gemeinsamen Übergaben.
