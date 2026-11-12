@@ -57,7 +57,7 @@ def measure_windows(windows: list[RuntimeWindow], highest: str, overlap: float) 
 def repair_windows(
     windows: list[RuntimeWindow], highest: str, overlap: float, previous: dict[str, float]
 ) -> list[RuntimeWindow]:
-    """Two deterministic coordinate passes; at most 16 windows, O(n^4).
+    """Two coordinate passes plus a bounded joint-chain neighborhood.
 
     Candidate endpoints align a real pulse with another real/forecast interval.
     Union starts outrank handover targets and concurrency, then movement breaks
@@ -109,4 +109,47 @@ def repair_windows(
                     changed = True
         if not changed:
             break
+    # A single move may temporarily increase overlap with the large zone even
+    # when moving its successor too would yield a strictly better chain. Test
+    # those joint moves atomically, retaining the same lexicographic objective.
+    movable = [i for i in order if best[i].movable and not best[i].forecast]
+    excess = any(
+        min(a.end, b.end) - max(a.start, b.start) > min(overlap, a.duration, b.duration) + 0.001
+        for n, a in enumerate(best)
+        for b in best[n + 1 :]
+    )
+    if len(movable) < 2 or not excess:
+        return best
+    base = list(best)
+    remaining_trials = 256
+    for first in movable:
+        for second in movable:
+            if first == second:
+                continue
+            a, b = base[first], base[second]
+            # Fixed opportunities are the strongest anchors. Their positions
+            # never change, and a forecast still cannot authorize an ON command.
+            anchors = sorted(
+                (w for i, w in enumerate(base) if i not in (first, second)),
+                key=lambda w: (w.movable, w.start, w.entity_id),
+            )
+            starts = [a.start, a.earliest]
+            for anchor in anchors:
+                handover = min(overlap, a.duration, anchor.duration)
+                starts.extend((anchor.end - handover, anchor.start + handover - a.duration))
+            seen: set[tuple[float, float]] = set()
+            for start in starts:
+                at = max(a.earliest, min(start, a.latest))
+                next_at = max(b.earliest, min(at + a.duration - min(overlap, a.duration, b.duration), b.latest))
+                if (at, next_at) in seen:
+                    continue
+                seen.add((at, next_at))
+                trial = list(base)
+                trial[first], trial[second] = replace(a, start=at), replace(b, start=next_at)
+                trial_score = score(trial)
+                if trial_score < best_score:
+                    best, best_score = trial, trial_score
+                remaining_trials -= 1
+                if remaining_trials == 0:
+                    return best
     return best

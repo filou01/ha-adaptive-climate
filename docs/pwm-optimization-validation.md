@@ -1,5 +1,13 @@
 # PWM optimization validation / Validierung der PWM-Optimierung
 
+These measurements precede preview 10's joint-handover planning correction.
+They document the storage optimization, not identical switching after that
+intentional scheduling change. See [joint handovers](pwm-joint-handovers.md).
+
+Diese Messungen stammen vor der gemeinsamen Planreparatur in Version 10. Sie
+belegen die Speicheroptimierung, nicht unveränderte Schaltfolgen nach dieser
+bewussten Planungskorrektur. Siehe den verlinkten Übergabebericht.
+
 [English](#english) · [Deutsch](#deutsch)
 
 ## English

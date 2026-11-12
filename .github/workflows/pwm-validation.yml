@@ -3,7 +3,7 @@ name: PWM and hydraulic validation
 on:
   workflow_dispatch:
   push:
-    branches: ["feat/**", "ci/**"]
+    branches: ["feat/**", "ci/**", "test/**"]
   pull_request:
     branches: [main]
     paths:

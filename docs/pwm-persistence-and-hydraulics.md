@@ -67,6 +67,9 @@ power-loss protection or fsync of every directory entry.
 
 ### Checking two-minute handovers against observed inputs
 
+Preview 10 additionally repairs joint-move local minima; see
+[joint handovers and acceptance](pwm-joint-handovers.md).
+
 For a two-minute minimal handover, explicitly set
 `handover_overlap_seconds: 120` on the group. The compatibility default remains
 240 seconds. The configured target is exposed as
@@ -304,6 +307,9 @@ werden wiederverwendet. Veraltete Callbacks bleiben entwertet. Zeitabhängige
 Abrechnung, Grenzen, Prioritäten und Ausgangsänderungen werden weiterhin geprüft.
 
 ### Zwei-Minuten-Übergaben prüfen
+
+Version 10 korrigiert zusätzlich gemeinsame Planverschiebungen; siehe
+[Übergaben und Abnahme](pwm-joint-handovers.md).
 
 Für zwei Minuten im Minimal-Modus muss die Gruppe ausdrücklich
 `handover_overlap_seconds: 120` setzen. Der kompatible Standard bleibt 240s.
