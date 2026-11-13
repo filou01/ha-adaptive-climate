@@ -298,8 +298,15 @@ class PWMLoadBalancingManager:
         zone.restart_pending = False
         if not adapter.eligible():
             adapter.suspend_accumulation()
-            zone.cancelled_balance += zone.credit
-            zone.credit = zone.allocation = 0.0
+            # Revoke only undelivered positive credit. Keep minimum-ON debt
+            # and the revision baseline of an already started allocation:
+            # a transient zero can leave the physical output ON until its
+            # minimum expires. Resetting that baseline would grant a second
+            # full ordinary pulse when demand returns before the OFF edge.
+            zone.cancelled_balance += max(0.0, zone.credit)
+            zone.credit = min(0.0, zone.credit)
+            if not zone.allocation_started:
+                zone.allocation = 0.0
             zone.pulse = Pulse(0.0)
             zone.priority = False
             zone.owed_since = None
@@ -346,6 +353,13 @@ class PWMLoadBalancingManager:
                 zone.credit += pulse.seconds
             else:
                 adjustment = pulse.seconds - zone.allocation
+                retired_baseline = (
+                    zone.allocation_started
+                    and zone.allocation == 0
+                    and zone.pulse.seconds == 0
+                    and not changed
+                    and not pulse.continuous
+                )
                 closed = (
                     not changed
                     and not zone.priority
@@ -353,7 +367,12 @@ class PWMLoadBalancingManager:
                     and not pulse.continuous
                     and (zone.allocation_started or zone.last_start_epoch >= logical_epoch)
                 )
-                if closed:
+                if retired_baseline:
+                    # A v12 journal may already have erased the spent baseline
+                    # during a zero-demand minimum-ON tail. It cannot prove a
+                    # fresh entitlement; adopt the revision without granting it.
+                    zone.cancelled_balance += adjustment
+                elif closed:
                     # This period's contiguous pulse has ended. Settle BOTH
                     # signs of a later PID revision into the closed balance;
                     # otherwise alternating increases/decreases ratchet a fake

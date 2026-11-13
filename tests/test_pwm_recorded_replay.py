@@ -15,6 +15,26 @@ import pytest
 from pwm_benchmark_support import benchmark
 
 
+@pytest.mark.skipif(
+    not os.environ.get("PWM_RECORDED_ELECTRICAL_TRACE"), reason="opt-in electrical recorded-input audit"
+)
+@pytest.mark.asyncio
+async def test_recorded_electrical_budget_provenance(monkeypatch):
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    from replay_pwm_budgets import replay
+    from custom_components.adaptive_climate.managers import pwm_controller
+
+    monkeypatch.setattr(pwm_controller, "time", pwm_controller.time)
+    trace = json.loads(Path(os.environ["PWM_RECORDED_ELECTRICAL_TRACE"]).read_text(encoding="utf-8"))
+    result = await replay(trace)
+    output = Path(os.environ["PWM_RECORDED_OUTPUT"])
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "electrical-budget-audit.json").write_text(json.dumps(result), encoding="utf-8")
+    assert not result["duplicate_grants"], "A balanced ledger must not hide resurrected spent allocations"
+
+
 @pytest.mark.skipif(not os.environ.get("PWM_RECORDED_TRACE"), reason="opt-in recorded-input replay")
 @pytest.mark.parametrize("overlap", [120, 240])
 @pytest.mark.asyncio
