@@ -86,7 +86,9 @@ async def test_late_ordinary_demand_joins_next_authorized_neighbor():
     assert not sim.zones[1].on
     await sim.advance(5300)
     assert sim.zones[0].transitions == [(0, True), (1200, False), (3600, True), (4800, False)]
-    assert sim.zones[1].transitions == [(3240, True), (3840, False), (4560, True), (5160, False)]
+    # Joining the neighbor is retained, but the next epoch no longer authorizes
+    # another ordinary pulse only 1320 seconds after the first late start.
+    assert sim.zones[1].transitions == [(3240, True), (3840, False)]
     assert sim.manager.estimated_starts == 2
     assert sim.manager._zones[sim.zones[1].entity_id].priority_start_count == 0
     balanced(sim)

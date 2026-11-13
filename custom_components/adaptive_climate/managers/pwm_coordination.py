@@ -120,6 +120,15 @@ class HAZoneAdapter:
             heater.set_duty_accumulator(max(0.0, heater.duty_accumulator_seconds - seconds))
             heater._last_accumulator_calc_time = None
 
+    def suspend_accumulation(self) -> None:
+        """Do not turn a no-demand or paused interval into earned low-duty heat."""
+        heater = self.entity._heater_controller
+        if self.output() <= 0:
+            heater.reset_duty_accumulator()
+        else:
+            # A pause may retain previously earned heat, never its idle clock.
+            heater._last_accumulator_calc_time = None
+
     async def command(self, on: bool) -> ActuationResult:
         entity = self.entity
         heater = entity._heater_controller

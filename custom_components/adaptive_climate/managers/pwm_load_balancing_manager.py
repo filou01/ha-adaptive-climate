@@ -46,6 +46,7 @@ class ZoneAdapter(Protocol):
     def minimum_on_seconds(self) -> float: ...
     def invalidate(self) -> None: ...
     def commit_credit(self, seconds: float) -> None: ...
+    def suspend_accumulation(self) -> None: ...
     async def command(self, on: bool) -> ActuationResult: ...
     def release(self) -> None: ...
 
@@ -81,6 +82,7 @@ class Ledger:
     pending_start_epoch: int | None = None
     allocation_started: bool = False
     last_start_epoch: int = -1
+    last_start_at: float | None = None
     last_ordinary_start_epoch: int = -1
     suppressed_ordinary_starts: int = 0
     uncertain_seconds: float = 0.0
@@ -178,6 +180,7 @@ class PWMLoadBalancingManager:
                 zone.delivered = elapsed
                 if zone.observed_on:
                     zone.last_start_epoch = 0
+                    zone.last_start_at = self._origin - elapsed
                     zone.allocation_started = True
                 zone.target_signature = zone.adapter.signature()
             self._observed_group = {entity for entity, zone in self._zones.items() if zone.observed_on}
@@ -226,6 +229,7 @@ class PWMLoadBalancingManager:
         if observed and not zone.observed_on:
             zone.allocation_started = True
             zone.last_start_epoch = max(zone.last_start_epoch, self.period_epoch(now))
+            zone.last_start_at = now
         zone.observed_on, zone.sampled_at = observed, now
         self._metrics(now)
 
@@ -293,6 +297,7 @@ class PWMLoadBalancingManager:
             return
         zone.restart_pending = False
         if not adapter.eligible():
+            adapter.suspend_accumulation()
             zone.cancelled_balance += zone.credit
             zone.credit = zone.allocation = 0.0
             zone.pulse = Pulse(0.0)
@@ -442,10 +447,13 @@ class PWMLoadBalancingManager:
                 earliest = now + adapter.minimum_remaining(True, now)
                 deadline = (zone.owed_since if zone.owed_since is not None else now) + self.max_deferral
                 ordinary = not zone.priority and not zone.pulse.continuous
+                if ordinary and zone.last_start_at is not None:
+                    earliest = max(earliest, zone.last_start_at + self._period)
                 slot = cycle_start + self.schedule.phases[entity]
                 due = max(earliest, min(max(now, slot), deadline)) if ordinary else earliest
-                # Repair within this allocation's current epoch. Do not cross
-                # into a fresh budget/allowance merely to make a nicer chain.
+                # Do not cross a budget boundary merely for a nicer chain.
+                # A binding execution guard may require a later start; it does
+                # not itself create another budget or ordinary allowance.
                 budget_end = min(boundary, zone.next_budget_at) if zone.next_budget_at is not None else boundary
                 latest = max(earliest, min(deadline, budget_end - 0.001)) if ordinary else earliest
                 due = min(due, latest)
@@ -464,6 +472,7 @@ class PWMLoadBalancingManager:
                     future = max(
                         future,
                         self._origin + (zone.last_start_epoch + 1) * self._period,
+                        zone.last_start_at + self._period if zone.last_start_at is not None else now,
                         now + adapter.minimum_remaining(True, now),
                     )
                     if future < horizon:
@@ -557,6 +566,8 @@ class PWMLoadBalancingManager:
                     slot = cycle_start + self.schedule.phases[entity]
                     due = now if zone.priority else min(max(now, slot), deadline)
                     minimum = adapter.minimum_remaining(True, now)
+                    if not zone.priority and not zone.pulse.continuous and zone.last_start_at is not None:
+                        minimum = max(minimum, zone.last_start_at + self._period - now)
                     if zone.priority and minimum > 0 and zone.priority_blocked_reason is None:
                         zone.priority_blocked_count += 1
                         zone.priority_blocked_reason = "minimum_off"
@@ -587,6 +598,12 @@ class PWMLoadBalancingManager:
                     or adapter.active()
                     or zone.credit <= 0
                     or self._suppress_ordinary_restart(zone, self._now())
+                    or (
+                        not zone.priority
+                        and not zone.pulse.continuous
+                        and zone.last_start_at is not None
+                        and self._now() < zone.last_start_at + self._period - 0.001
+                    )
                 ):
                     zone.pending_on = False
                     zone.pending_start_epoch = None
@@ -670,6 +687,11 @@ class PWMLoadBalancingManager:
             "cancelled_balance_seconds": round(zone.cancelled_balance, 1) if zone else 0.0,
             "restart_uncertain_seconds": round(zone.uncertain_seconds, 1) if zone else 0.0,
             "last_start_epoch": zone.last_start_epoch if zone else -1,
+            "ordinary_restart_in_seconds": (
+                max(0.0, zone.last_start_at + self._period - self._now())
+                if zone is not None and zone.last_start_at is not None
+                else 0.0
+            ),
             "last_ordinary_start_epoch": zone.last_ordinary_start_epoch if zone else -1,
             "suppressed_ordinary_starts": zone.suppressed_ordinary_starts if zone else 0,
             "remaining_credit_seconds": round(zone.credit, 1) if zone else 0.0,

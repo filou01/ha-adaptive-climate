@@ -2,6 +2,8 @@
 
 ## English
 
+[Preview 12](pwm-start-spacing.md) adds elapsed start spacing across epochs and corrects idle low-duty accrual.
+
 ### Problem and behavior
 
 The preview-10 minimal planner could overlap two small zones for much longer
@@ -65,6 +67,8 @@ See [joint handovers](pwm-joint-handovers.md) for the existing search and
 [the general test plan](pump-aware-pwm-test-plan.md) for activation/rollback.
 
 ## Deutsch
+
+[Version 12](pwm-start-spacing.md) ergänzt Startabstände über Epochen-Grenzen und korrigiert die Sammlung bei Nullbedarf.
 
 ### Problem und Verhalten
 

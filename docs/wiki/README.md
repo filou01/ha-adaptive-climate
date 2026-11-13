@@ -2,6 +2,8 @@
 
 ## English
 
+`PWM-Preview-12.md` documents elapsed ordinary-start spacing, idle accrual corrections and their regression/acceptance plan for fork preview 12.
+
 `PWM-Real-Serialization.md` prepares the bilingual follow-up objective fix and its acceptance plan. It accompanies fork test release `v0.67.1-pwm.11`.
 
 `PWM-Preview-10.md` is a prepared bilingual page for the fork's experimental
@@ -15,6 +17,8 @@ A maintainer can apply `git apply --check pwm-coordination.patch` and then
 patch context. Publish alongside the feature merge; links target upstream main.
 
 ## Deutsch
+
+`PWM-Preview-12.md` beschreibt Startabstände, korrigierte Kleinstlast-Sammlung und den Test-/Abnahmeplan der eigenen Version 12.
 
 `PWM-Real-Serialization.md` ergänzt die zweisprachige Zielkorrektur samt Abnahmeplan. Die Seite begleitet die eigene Testversion `v0.67.1-pwm.11`.
 

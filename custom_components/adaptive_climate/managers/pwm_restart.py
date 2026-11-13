@@ -115,6 +115,7 @@ def snapshot(group: PWMLoadBalancingManager, now: float, wall: float) -> dict[st
             "pending_on": zone.pending_on,
             "pending_start_epoch": zone.pending_start_epoch,
             "last_start_epoch": zone.last_start_epoch,
+            "last_start_at": wall + zone.last_start_at - now if zone.last_start_at is not None else None,
             "allocation_started": zone.allocation_started,
             "last_ordinary_start_epoch": zone.last_ordinary_start_epoch,
             "suppressed_ordinary_starts": zone.suppressed_ordinary_starts,
@@ -164,8 +165,8 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
         for key in ("priority", "pending_priority", "allocation_started"):
             if not isinstance(row.get(key, False), bool):
                 raise ValueError("Invalid PWM priority flag")
-        for key in ("priority_at", "owed_at"):
-            if row.get(key) is not None and number(row[key]) > wall + 5:
+        for key in ("priority_at", "owed_at", "last_start_at"):
+            if row.get(key) is not None and number(row[key]) > min(wall, number(row.get("at", saved_at))) + 5:
                 raise ValueError("Invalid PWM priority timestamp")
         for key in ("priority_count", "blocked_count", "max_deferral"):
             if number(row.get(key, 0)) < 0:
@@ -241,6 +242,24 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
                 # The uncertain ON may belong to the recovery period. Reconcile
                 # it OFF without allowing a second ordinary start in that period.
                 zone.last_start_epoch = max(zone.last_start_epoch, group.period_epoch(now))
+        started_at = row.get("last_start_at")
+        if row["pending_on"]:
+            # The command may have executed after its pre-ON checkpoint. Its
+            # exact time is unknown; recovery must not shorten the spacing guard.
+            zone.last_start_at = now
+        elif started_at is not None:
+            zone.last_start_at = now + number(started_at) - wall
+        elif zone.last_start_epoch >= 0:
+            # Older journals may retain the pipeline's last open command. Use
+            # it only when it agrees with the observed start epoch; otherwise
+            # its epoch end (or the saved row) is a conservative upper bound.
+            latest = min(row_at, origin + (zone.last_start_epoch + 1) * group._period)
+            opened = row["controller"].get("opened_at")
+            if opened is not None:
+                opened = number(opened)
+                if origin + zone.last_start_epoch * group._period <= opened <= latest:
+                    latest = opened
+            zone.last_start_at = now + latest - wall
         zone.pulse = Pulse(*row["pulse"])
         next_at = row["next_at"]
         zone.next_budget_at = now + number(next_at) - wall if next_at is not None else None

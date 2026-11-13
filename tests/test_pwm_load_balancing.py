@@ -71,6 +71,9 @@ class SimZone:
     def commit_credit(self, seconds):
         pass
 
+    def suspend_accumulation(self):
+        pass  # This pure adapter has no raw low-duty accumulator.
+
     async def command(self, on):
         if self.failure:
             return ActuationResult.FAILED
