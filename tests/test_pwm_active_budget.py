@@ -34,17 +34,18 @@ async def test_zero_and_return_during_minimum_on_does_not_regrant_spent_budget(l
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("period", [1800, 3600, 7200])
-async def test_legitimate_adjacent_period_budgets_are_consumed_once(period):
+async def test_adjacent_period_budgets_wait_for_separate_observed_pulses(period):
     sim = Simulation((0,), period=period)
     zone = sim.zones[0]
     await sim.update()
     await sim.advance(period * 0.9)
     zone.seconds = period * 0.2
     await sim.update()
-    await sim.advance(period * 1.31)
+    await sim.advance(period * 2.11)
     ledger = sim.manager._zones[zone.entity_id]
-    # Both independently earned periods can legitimately form one long pulse.
-    assert zone.transitions == [(period * 0.9, True), (period * 1.3, False)]
+    # A global boundary cannot append another budget to an active pulse.
+    assert [on for _, on in zone.transitions] == [True, False, True, False]
+    assert [at for at, _ in zone.transitions] == pytest.approx([period * 0.9, period * 1.1, period * 1.9, period * 2.1])
     assert ledger.delivered == pytest.approx(period * 0.4)
     assert ledger.requested == pytest.approx(period * 0.4)
     assert ledger.credit == pytest.approx(0)

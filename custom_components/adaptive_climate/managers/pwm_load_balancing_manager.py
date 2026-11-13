@@ -230,6 +230,9 @@ class PWMLoadBalancingManager:
             zone.allocation_started = True
             zone.last_start_epoch = max(zone.last_start_epoch, self.period_epoch(now))
             zone.last_start_at = now
+            # The next ordinary entitlement belongs to the next observed
+            # start-to-start period, not a global boundary inside this pulse.
+            zone.next_budget_at = now + self._period
         zone.observed_on, zone.sampled_at = observed, now
         self._metrics(now)
 
@@ -321,6 +324,20 @@ class PWMLoadBalancingManager:
         new_epoch = zone.epoch < 0 or (
             logical_epoch > zone.epoch and (zone.next_budget_at is None or now >= zone.next_budget_at or changed)
         )
+        if zone.epoch >= 0 and output < 100:
+            if zone.last_start_at is not None:
+                zone.next_budget_at = max(zone.next_budget_at or now, zone.last_start_at + self._period)
+            # Keep one revisable reservation until it has actually run. A
+            # global epoch crossing cannot merge another period into an active
+            # or still deferred ordinary pulse. Missed slots are not a backlog.
+            if zone.observed_on or (
+                not changed
+                and (
+                    (zone.credit > 0 and not zone.allocation_started)
+                    or (zone.next_budget_at is not None and now < zone.next_budget_at)
+                )
+            ):
+                new_epoch = False
         low_duty = zone.pulse.accumulator_debit > 0
         if low_duty and (zone.observed_on or zone.credit > 0) and not changed:
             # A reserved accumulator pulse is not replaced on ordinary PID ticks.
@@ -693,6 +710,12 @@ class PWMLoadBalancingManager:
             "group": self.name,
             "mode": self.mode,
             "reason": self.reason,
+            "budget_policy": "observed_start_period",
+            "next_budget_in_seconds": (
+                max(0.0, zone.next_budget_at - self._now())
+                if zone is not None and zone.next_budget_at is not None
+                else None
+            ),
             "overlap_strategy": self.strategy,
             "handover_overlap_seconds": self.overlap,
             "generation": self._generation,

@@ -33,6 +33,7 @@ async def test_recorded_electrical_budget_provenance(monkeypatch):
     output.mkdir(parents=True, exist_ok=True)
     (output / "electrical-budget-audit.json").write_text(json.dumps(result), encoding="utf-8")
     assert not result["duplicate_grants"], "A balanced ledger must not hide resurrected spent allocations"
+    assert not result["active_ordinary_period_grants"], "A global boundary must not extend an ordinary running pulse"
 
 
 @pytest.mark.skipif(not os.environ.get("PWM_RECORDED_TRACE"), reason="opt-in recorded-input replay")

@@ -71,6 +71,7 @@ async def replay(trace, manager_class=None):
     src.pwm_controller.time = SimpleNamespace(monotonic=lambda: sim.now)
     audit = []
     duplicates = []
+    active_period_grants = []
     entitlement_accounts = {}
     cancelled_baselines = {}
     original_allocate = sim.manager._allocate
@@ -90,6 +91,14 @@ async def replay(trace, manager_class=None):
             cancelled_baselines[adapter.entity_id] = (ledger.epoch, ledger.allocation, signature)
         original_allocate(ledger, now)
         grant = ledger.requested - before["requested"]
+        if (
+            before["epoch"] >= 0
+            and ledger.epoch > before["epoch"]
+            and ledger.observed_on
+            and adapter.output() < 100
+            and not changed
+        ):
+            active_period_grants.append({"at": now, "zone": adapter.entity_id, "seconds": grant})
         duplicate = 0.0
         baseline = cancelled_baselines.get(adapter.entity_id)
         if baseline and eligible:
@@ -252,6 +261,7 @@ async def replay(trace, manager_class=None):
         "zones": zones,
         "budget_events": audit,
         "duplicate_grants": duplicates,
+        "active_ordinary_period_grants": active_period_grants,
         "hydraulics": hydraulics,
         "transitions": [z.transitions for z in sim.zones],
     }
@@ -262,12 +272,14 @@ async def main():
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--baseline", default="v0.67.1-pwm.12")
+    parser.add_argument("--baseline-label", default="baseline")
+    parser.add_argument("--candidate-label", default="candidate")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     trace = json.loads(args.input.read_text(encoding="utf-8-sig"))
     source()
     old = historical_manager(args.baseline, args.output / "baseline_manager_private.py")
-    for label, manager in (("v12", old), ("v13", None)):
+    for label, manager in ((args.baseline_label, old), (args.candidate_label, None)):
         result = await replay(trace, manager)
         (args.output / f"{label}.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(label, json.dumps(result["zones"]), flush=True)

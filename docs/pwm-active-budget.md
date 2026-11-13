@@ -1,5 +1,8 @@
 # PWM preview 13: active budget revisions / Laufende Budgetkorrekturen
 
+Version 14 changes the period-concatenation policy described here. See
+[Separate PWM pulses / Getrennte Heizimpulse](pwm-start-cadence.md).
+
 ## English
 
 Preview 12 could extend a running ordinary pulse after a transient zero demand.
