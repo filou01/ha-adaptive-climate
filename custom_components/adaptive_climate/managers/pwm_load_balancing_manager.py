@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .heater_actuation import ActuationResult
-from .pwm_load_balancing_optimizer import Schedule, ZoneRequest, plan
+from .pwm_load_balancing_optimizer import Schedule, ZoneRequest, measure, plan
 from .pwm_pulse import Pulse
 from .pwm_runtime_planner import RuntimeWindow, measure_windows, repair_windows
 from ..helpers.hydraulic_metrics import HydraulicTracker
@@ -486,13 +486,19 @@ class PWMLoadBalancingManager:
                 if ordinary and zone.last_start_at is not None:
                     earliest = max(earliest, zone.last_start_at + self._period)
                 slot = cycle_start + self.schedule.phases[entity]
-                due = max(earliest, min(max(now, slot), deadline)) if ordinary else earliest
-                # Do not cross a budget boundary merely for a nicer chain.
-                # A binding execution guard may require a later start; it does
-                # not itself create another budget or ordinary allowance.
-                budget_end = min(boundary, zone.next_budget_at) if zone.next_budget_at is not None else boundary
-                latest = max(earliest, min(deadline, budget_end - 0.001)) if ordinary else earliest
-                due = min(due, latest)
+                # First placement follows the cyclic overlap-aware phase.
+                # Once a zone has an observed cadence, an executable new budget
+                # is due at its safety/spacing bound. A prettier serial chain
+                # cannot postpone it and move next period's observed anchor.
+                if ordinary and zone.last_start_at is not None:
+                    due = latest = earliest
+                else:
+                    # Initial/returning demand has no recurring observed
+                    # cadence to protect. Keep its bounded handover window.
+                    due = max(earliest, min(max(now, slot), deadline)) if ordinary else earliest
+                    budget_end = min(boundary, zone.next_budget_at) if zone.next_budget_at is not None else boundary
+                    latest = max(earliest, min(deadline, budget_end - 0.001)) if ordinary else earliest
+                    due = min(due, latest)
                 duration = max(zone.credit, adapter.minimum_on_seconds())
                 if zone.pulse.continuous:
                     duration = max(duration, horizon - due)
@@ -706,11 +712,55 @@ class PWMLoadBalancingManager:
 
     def diagnostics(self, entity_id: str) -> dict[str, object]:
         zone = self._zones.get(entity_id)
+        now = self._now()
+        planned = self._runtime_starts.get(entity_id)
+        safe_start = now
+        delay_reason = "no_reserved_demand"
+        active_requests = [
+            ZoneRequest(entity, min(self._period, max(0.0, z.allocation)), z.weight)
+            for entity, z in self._zones.items()
+            if z.adapter.eligible()
+        ]
+        cyclic = measure(self._period, active_requests, self.schedule.phases) if self.schedule is not None else None
+        requested_overlap = max(0.0, sum(r.on_seconds for r in active_requests) - self._period)
+        if zone is not None:
+            minimum = zone.adapter.minimum_remaining(True, now)
+            safe_start += minimum
+            ordinary = not zone.priority and not zone.pulse.continuous
+            if ordinary and zone.last_start_at is not None:
+                safe_start = max(safe_start, zone.last_start_at + self._period)
+            if zone.observed_on:
+                delay_reason = "already_on"
+            elif not zone.adapter.eligible():
+                delay_reason = "ineligible"
+            elif minimum > 0:
+                delay_reason = "minimum_off"
+            elif ordinary and zone.last_start_at is not None and safe_start > now:
+                delay_reason = "start_spacing"
+            elif zone.credit <= 0:
+                delay_reason = "signed_balance_or_budget_not_due"
+            elif planned is not None and planned > safe_start + 0.001:
+                delay_reason = "initial_handover_window"
+            else:
+                delay_reason = "executable_budget_due"
         return {
             "group": self.name,
             "mode": self.mode,
             "reason": self.reason,
             "budget_policy": "observed_start_period",
+            "runtime_deadline_policy": "heat_before_serialization",
+            "scheduled_start_delay_seconds": (
+                max(0.0, planned - safe_start)
+                if planned is not None and zone is not None and not zone.observed_on and zone.credit > 0
+                else 0.0
+            ),
+            "start_delay_reason": delay_reason,
+            "overlap_required_seconds": requested_overlap,
+            "projected_combined_overlap_seconds": (
+                max(0.0, sum(r.on_seconds for r in active_requests) - cyclic.energized_seconds)
+                if cyclic is not None
+                else None
+            ),
             "next_budget_in_seconds": (
                 max(0.0, zone.next_budget_at - self._now())
                 if zone is not None and zone.next_budget_at is not None

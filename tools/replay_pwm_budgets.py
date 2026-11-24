@@ -72,6 +72,8 @@ async def replay(trace, manager_class=None):
     audit = []
     duplicates = []
     active_period_grants = []
+    recurring_deadlines = {}
+    late_recurring_starts = []
     entitlement_accounts = {}
     cancelled_baselines = {}
     original_allocate = sim.manager._allocate
@@ -90,6 +92,13 @@ async def replay(trace, manager_class=None):
         if not eligible and ledger.observed_on and ledger.allocation_started and ledger.allocation > 0:
             cancelled_baselines[adapter.entity_id] = (ledger.epoch, ledger.allocation, signature)
         original_allocate(ledger, now)
+        if not eligible or ledger.credit <= 0 or ledger.priority or ledger.pulse.continuous:
+            recurring_deadlines.pop(adapter.entity_id, None)
+        elif not ledger.observed_on and ledger.last_start_at is not None:
+            recurring_deadlines.setdefault(
+                adapter.entity_id,
+                max(now + adapter.minimum_remaining(True, now), ledger.last_start_at + sim.manager._period),
+            )
         grant = ledger.requested - before["requested"]
         if (
             before["epoch"] >= 0
@@ -176,6 +185,16 @@ async def replay(trace, manager_class=None):
             result = await super().command(on)
             if previous != self.on:
                 if on:
+                    deadline = recurring_deadlines.pop(self.entity_id, None)
+                    if ordinary and deadline is not None and sim.now > deadline + 0.01:
+                        late_recurring_starts.append(
+                            {
+                                "at": sim.now,
+                                "zone": self.entity_id,
+                                "eligible_at": deadline,
+                                "delay_seconds": sim.now - deadline,
+                            }
+                        )
                     self.starts.append({"at": sim.now, "ordinary": ordinary})
                 pipeline = self.heater._pwm_controller._heat_pipeline
                 (pipeline.valve_opened if on else pipeline.valve_closed)(sim.now)
@@ -262,6 +281,7 @@ async def replay(trace, manager_class=None):
         "budget_events": audit,
         "duplicate_grants": duplicates,
         "active_ordinary_period_grants": active_period_grants,
+        "late_recurring_budget_starts": late_recurring_starts,
         "hydraulics": hydraulics,
         "transitions": [z.transitions for z in sim.zones],
     }

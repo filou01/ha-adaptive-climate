@@ -1,5 +1,8 @@
 # PWM preview 14: separate pulses / Getrennte Heizimpulse
 
+The v15 candidate tightens runtime heat deadlines without changing this budget
+anchor. See [Heat before serialization / Heizbedarf vor Serialisierung](pwm-demand-deadlines.md).
+
 ## Deutsch
 
 Version 14 ersetzt bewusst die in v13 erlaubte Zusammenfassung benachbarter
