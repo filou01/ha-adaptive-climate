@@ -109,6 +109,11 @@ def snapshot(group: PWMLoadBalancingManager, now: float, wall: float) -> dict[st
             "signature": list(zone.target_signature),
             "pulse": [zone.pulse.seconds, zone.pulse.accumulator_debit, zone.pulse.continuous],
             "next_at": wall + zone.next_budget_at - now if zone.next_budget_at is not None else None,
+            "budget_anchor_at": wall + zone.budget_anchor_at - now if zone.budget_anchor_at is not None else None,
+            "period_delivered": zone.period_delivered,
+            "recovery_not_before": wall + zone.recovery_not_before - now
+            if zone.recovery_not_before is not None
+            else None,
             "requested": zone.requested,
             "delivered": zone.delivered,
             "cancelled": zone.cancelled_balance,
@@ -162,6 +167,19 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
             number(row["signature"][0])
         if row["next_at"] is not None:
             number(row["next_at"])
+        for key in ("budget_anchor_at", "recovery_not_before"):
+            if row.get(key) is not None:
+                number(row[key])
+        if (
+            row.get("period_delivered") is not None
+            and not 0 <= number(row["period_delivered"]) <= row["delivered"] + 0.01
+        ):
+            raise ValueError("Invalid PWM period delivery")
+        if (
+            row.get("recovery_not_before") is not None
+            and row["recovery_not_before"] > number(row.get("at", saved_at)) + group._period + 5
+        ):
+            raise ValueError("Invalid PWM recovery guard")
         for key in ("priority", "pending_priority", "allocation_started"):
             if not isinstance(row.get(key, False), bool):
                 raise ValueError("Invalid PWM priority flag")
@@ -260,9 +278,24 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
                 if origin + zone.last_start_epoch * group._period <= opened <= latest:
                     latest = opened
             zone.last_start_at = now + latest - wall
+        recovery_guard = row.get("recovery_not_before")
+        zone.recovery_not_before = now + number(recovery_guard) - wall if recovery_guard is not None else None
+        if row["pending_on"] or (started_at is None and zone.last_start_at is not None):
+            zone.recovery_not_before = max(zone.recovery_not_before or now, zone.last_start_at + group._period)
         zone.pulse = Pulse(*row["pulse"])
         next_at = row["next_at"]
         zone.next_budget_at = now + number(next_at) - wall if next_at is not None else None
+        anchor = row.get("budget_anchor_at")
+        zone.budget_anchor_at = (
+            now + number(anchor) - wall
+            if anchor is not None
+            else zone.next_budget_at - group._period
+            if zone.next_budget_at is not None
+            else None
+        )
+        # Legacy journals have no per-reservation observed delivery. Unknown is
+        # distinct from zero until the first new entitlement is issued.
+        zone.period_delivered = row.get("period_delivered")
         uncertain = min(max(0.0, zone.credit), offline) if row["controller"]["on"] else 0.0
         if row["pending_on"] or row["controller"]["on"] != zone.adapter.active():
             uncertain = max(0.0, zone.credit)
@@ -274,7 +307,8 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
             zone.cancelled_balance += max(0.0, zone.credit)
             zone.credit = min(0.0, zone.credit)
             zone.epoch, zone.allocation, zone.pulse = -1, 0.0, Pulse(0.0)
-            zone.next_budget_at = None
+            # Keep the expired release on its original lattice. The first
+            # live allocation skips offline periods without moving the anchor.
         group.restored_members.add(entity)
         zone.restart_pending = True
         zone.sampled_at, zone.observed_on = now, zone.adapter.active()

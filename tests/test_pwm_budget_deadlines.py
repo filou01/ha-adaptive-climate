@@ -1,4 +1,4 @@
-"""Heat/cadence deadlines outrank a nicer low-overlap handover chain."""
+"""Stable budget deadlines constrain flexible, hydraulically repaired starts."""
 
 from itertools import pairwise
 
@@ -21,7 +21,9 @@ async def test_stable_overload_preserves_each_observed_cadence_and_full_budgets(
     for zone, duration in zip(sim.zones, durations):
         starts = [at for at, on in zone.transitions if on]
         assert len(starts) >= 10
-        assert starts[0] <= sim.manager.schedule.phases[zone.entity_id] + 0.001
+        # A cyclic phase is a preference, not a runtime heat deadline. The
+        # complete reservation must fit the stable entitlement window instead.
+        assert starts[0] + duration <= period + 0.001
         assert all(b - a == pytest.approx(period, abs=0.001) for a, b in pairwise(starts))
         assert max(at - starts[0] - n * period for n, at in enumerate(starts)) <= 0.001
         ledger = sim.manager._zones[zone.entity_id]
@@ -35,24 +37,36 @@ async def test_stable_overload_preserves_each_observed_cadence_and_full_budgets(
     delivered = sum(z.delivered for z in sim.manager._zones.values())
     assert delivered - sim.manager.energized_seconds >= 8 * period / 3
     diagnostics = sim.manager.diagnostics(sim.zones[0].entity_id)
-    assert diagnostics["runtime_deadline_policy"] == "heat_before_serialization"
+    assert diagnostics["runtime_deadline_policy"] == "complete_budget_within_stable_window"
     assert diagnostics["overlap_required_seconds"] == pytest.approx(period / 3)
     assert diagnostics["projected_combined_overlap_seconds"] >= period / 3 - 0.001
 
 
 @pytest.mark.asyncio
-async def test_changing_outputs_cannot_delay_an_already_eligible_recurring_budget():
+async def test_changing_outputs_keep_budget_lattice_while_execution_phase_can_change():
     sim = Simulation((1800, 1200, 900, 900))
     sim.manager.overlap = 120
     sim.manager.max_deferral = 3600
+    anchors = {zone.entity_id: [] for zone in sim.zones}
     for at in range(0, 8 * 3600 + 1, 60):
         await sim.advance(at)
         for n, zone in enumerate(sim.zones):
             zone.seconds = (1800, 1200, 900, 900)[n] + (at // 1800 % 3 - 1) * 120
         await sim.update()
+        for entity, ledger in sim.manager._zones.items():
+            anchors[entity].append(ledger.next_budget_at)
     for zone in sim.zones:
         starts = [at for at, on in zone.transitions if on]
-        assert all(b - a == pytest.approx(3600, abs=0.001) for a, b in pairwise(starts))
+        # Demand changes may move phase in either direction. Preserve the
+        # actual quota, full entitlements and fixed release lattice instead
+        # of blessing v15's frozen phase as the definition of correctness.
+        assert len(starts) >= 8
+        assert len({int(at // 3600) for at in starts}) == len(starts)
+        assert all(at % 3600 == pytest.approx(0, abs=0.001) for at in anchors[zone.entity_id])
+        ledger = sim.manager._zones[zone.entity_id]
+        sim.manager._sample(ledger, sim.now)
+        assert ledger.requested == pytest.approx(ledger.delivered + ledger.credit + ledger.cancelled_balance)
+        assert ledger.credit <= zone.seconds + 0.001
 
 
 @pytest.mark.asyncio

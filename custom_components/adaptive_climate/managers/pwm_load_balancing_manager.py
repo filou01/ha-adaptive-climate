@@ -76,6 +76,10 @@ class Ledger:
     version: int = 0
     pending_priority: bool = False
     next_budget_at: float | None = None
+    budget_anchor_at: float | None = None
+    period_delivered: float | None = 0.0
+    actual_start_delay: float | None = None
+    recovery_not_before: float | None = None
     allocated_now: bool = False
     restart_pending: bool = False
     pending_on: bool = False
@@ -142,6 +146,7 @@ class PWMLoadBalancingManager:
         self.weighted_overlap_seconds = 0.0
         self.high_weight_overlap_seconds = 0.0
         self._runtime_starts: dict[str, float] = {}
+        self._runtime_bounds: dict[str, tuple[float, float, float, float]] = {}
         self._runtime_reasons: dict[str, str] = {}
         self._runtime_projected_starts = 0
         self._highest_weight = min(members, key=lambda entity: (-members[entity], entity))
@@ -226,13 +231,20 @@ class PWMLoadBalancingManager:
             elapsed = max(0.0, now - zone.sampled_at)
             zone.credit -= elapsed
             zone.delivered += elapsed
+            if zone.period_delivered is not None:
+                zone.period_delivered += elapsed
         if observed and not zone.observed_on:
             zone.allocation_started = True
             zone.last_start_epoch = max(zone.last_start_epoch, self.period_epoch(now))
             zone.last_start_at = now
-            # The next ordinary entitlement belongs to the next observed
-            # start-to-start period, not a global boundary inside this pulse.
-            zone.next_budget_at = now + self._period
+            zone.actual_start_delay = max(0.0, now - zone.owed_since) if zone.owed_since is not None else None
+            # Observed edges spend a reservation; they do not move its clock.
+            # next_budget_at advances only when a logical entitlement is issued.
+            # A user/priority transaction explicitly starts a fresh cadence and
+            # spends its following allowance, unlike a hydraulic timing repair.
+            if zone.priority:
+                zone.budget_anchor_at = now
+                zone.next_budget_at = now + self._period
         zone.observed_on, zone.sampled_at = observed, now
         self._metrics(now)
 
@@ -325,8 +337,6 @@ class PWMLoadBalancingManager:
             logical_epoch > zone.epoch and (zone.next_budget_at is None or now >= zone.next_budget_at or changed)
         )
         if zone.epoch >= 0 and output < 100:
-            if zone.last_start_at is not None:
-                zone.next_budget_at = max(zone.next_budget_at or now, zone.last_start_at + self._period)
             # Keep one revisable reservation until it has actually run. A
             # global epoch crossing cannot merge another period into an active
             # or still deferred ordinary pulse. Missed slots are not a backlog.
@@ -338,6 +348,20 @@ class PWMLoadBalancingManager:
                 )
             ):
                 new_epoch = False
+        if (
+            new_epoch
+            and zone.epoch >= 0
+            and not changed
+            and not zone.pulse.continuous
+            and zone.last_start_epoch >= logical_epoch
+        ):
+            # The previous reservation spent this observed start allowance.
+            # Wait for its next boundary, retaining a still-serviceable new
+            # window. Only releases ending before that boundary are missed.
+            new_epoch = False
+            next_start_period = self._origin + (logical_epoch + 1) * self._period
+            if zone.next_budget_at is not None and zone.next_budget_at + self._period <= next_start_period:
+                zone.next_budget_at += int((next_start_period - zone.next_budget_at) // self._period) * self._period
         low_duty = zone.pulse.accumulator_debit > 0
         if low_duty and (zone.observed_on or zone.credit > 0) and not changed:
             # A reserved accumulator pulse is not replaced on ordinary PID ticks.
@@ -365,6 +389,7 @@ class PWMLoadBalancingManager:
             pulse = adapter.prepare(now)
             if new_epoch:
                 zone.allocation_started = zone.observed_on
+                zone.period_delivered = 0.0
                 # One entitlement per observed period; never replay missed
                 # periods after an event-loop stall or HA restart.
                 zone.credit += pulse.seconds
@@ -458,18 +483,18 @@ class PWMLoadBalancingManager:
             except Exception as err:
                 raise PWMCheckpointError from err
 
+    def _minimum_start_remaining(self, zone: Ledger, now: float) -> float:
+        return max(zone.adapter.minimum_remaining(True, now), (zone.recovery_not_before or now) - now)
+
     def _plan_executable(self, now: float, cycle_start: float) -> None:
         """Repair timing only; all accounting and command eligibility stay authoritative."""
         if self.schedule is None or self._origin is None:
             return
         windows: list[RuntimeWindow] = []
         reasons: dict[str, str] = {}
+        self._runtime_bounds = {}
         boundary = cycle_start + self._period
         horizon = boundary + self._period
-        overloaded = (
-            sum(min(self._period, max(0.0, z.allocation)) for z in self._zones.values() if z.adapter.eligible())
-            > self._period
-        )
         for entity, zone in self._zones.items():
             adapter = zone.adapter
             eligible = adapter.eligible()
@@ -484,31 +509,18 @@ class PWMLoadBalancingManager:
                 windows.append(RuntimeWindow(entity, zone.weight, now, max(0.001, duration), now, now))
                 reasons[entity] = "already_on"
             elif eligible and zone.credit > 0:
-                earliest = now + adapter.minimum_remaining(True, now)
+                earliest = now + self._minimum_start_remaining(zone, now)
                 deadline = (zone.owed_since if zone.owed_since is not None else now) + self.max_deferral
                 ordinary = not zone.priority and not zone.pulse.continuous
-                if ordinary and zone.last_start_at is not None:
-                    earliest = max(earliest, zone.last_start_at + self._period)
                 slot = cycle_start + self.schedule.phases[entity]
-                # First placement follows the cyclic overlap-aware phase.
-                # Once a zone has an observed cadence, an executable new budget
-                # is due at its safety/spacing bound. A prettier serial chain
-                # cannot postpone it and move next period's observed anchor.
-                if ordinary and zone.last_start_at is not None:
-                    due = latest = earliest
-                else:
-                    # Initial/returning demand has no recurring observed
-                    # cadence to protect. Keep its bounded handover window.
-                    due = max(earliest, min(max(now, slot), deadline)) if ordinary else earliest
-                    budget_end = min(boundary, zone.next_budget_at) if zone.next_budget_at is not None else boundary
-                    latest = max(earliest, min(deadline, budget_end - 0.001)) if ordinary else earliest
-                    due = min(due, latest)
-                    if ordinary and overloaded:
-                        # Preserve the cyclic planner's necessary extra overlap
-                        # at initial overload too; do not stretch its first
-                        # chain back out beyond the nominal phase deadlines.
-                        latest = due
+                # The reservation has a stable deadline independent of its ON
+                # edge. Keep the whole pulse inside that window when physically
+                # feasible, and expose the remaining flexibility to repair.
                 duration = max(zone.credit, adapter.minimum_on_seconds())
+                budget_end = zone.next_budget_at if zone.next_budget_at is not None else boundary
+                latest = max(earliest, min(deadline, budget_end - duration)) if ordinary else earliest
+                due = min(latest, max(earliest, min(max(now, slot), deadline))) if ordinary else earliest
+                self._runtime_bounds[entity] = (earliest, due, latest, budget_end)
                 if zone.pulse.continuous:
                     duration = max(duration, horizon - due)
                 windows.append(RuntimeWindow(entity, zone.weight, due, duration, earliest, latest, ordinary))
@@ -523,8 +535,7 @@ class PWMLoadBalancingManager:
                     future = max(
                         future,
                         self._origin + (zone.last_start_epoch + 1) * self._period,
-                        zone.last_start_at + self._period if zone.last_start_at is not None else now,
-                        now + adapter.minimum_remaining(True, now),
+                        now + self._minimum_start_remaining(zone, now),
                     )
                     if future < horizon:
                         duration = max(duration, adapter.minimum_on_seconds())
@@ -594,9 +605,16 @@ class PWMLoadBalancingManager:
         cycle = int((now - self._origin) // self._period)
         cycle_start = self._origin + cycle * self._period
         next_times.append(cycle_start + self._period)
-        for entity, zone in self._zones.items():
+        for zone in self._zones.values():
             if zone.allocated_now:
-                zone.next_budget_at = cycle_start + self.schedule.phases[entity] + self._period
+                if zone.next_budget_at is None:
+                    zone.budget_anchor_at = now
+                    zone.next_budget_at = now + self._period
+                else:
+                    # Skip missed releases without adding a backlog, preserving
+                    # the original phase even after a delayed execution.
+                    skipped = max(1, int((now - zone.next_budget_at) // self._period) + 1)
+                    zone.next_budget_at += skipped * self._period
             if zone.next_budget_at is not None and zone.next_budget_at > now:
                 next_times.append(zone.next_budget_at)
         self._plan_executable(now, cycle_start)
@@ -616,9 +634,7 @@ class PWMLoadBalancingManager:
                     deadline = (zone.owed_since if zone.owed_since is not None else now) + self.max_deferral
                     slot = cycle_start + self.schedule.phases[entity]
                     due = now if zone.priority else min(max(now, slot), deadline)
-                    minimum = adapter.minimum_remaining(True, now)
-                    if not zone.priority and not zone.pulse.continuous and zone.last_start_at is not None:
-                        minimum = max(minimum, zone.last_start_at + self._period - now)
+                    minimum = self._minimum_start_remaining(zone, now)
                     if zone.priority and minimum > 0 and zone.priority_blocked_reason is None:
                         zone.priority_blocked_count += 1
                         zone.priority_blocked_reason = "minimum_off"
@@ -649,12 +665,6 @@ class PWMLoadBalancingManager:
                     or adapter.active()
                     or zone.credit <= 0
                     or self._suppress_ordinary_restart(zone, self._now())
-                    or (
-                        not zone.priority
-                        and not zone.pulse.continuous
-                        and zone.last_start_at is not None
-                        and self._now() < zone.last_start_at + self._period - 0.001
-                    )
                 ):
                     zone.pending_on = False
                     zone.pending_start_epoch = None
@@ -683,6 +693,13 @@ class PWMLoadBalancingManager:
                         zone.max_deferral = max(zone.max_deferral, sampled - zone.owed_since)
                     zone.priority = False
                     next_times.append(sampled + max(0.001, zone.credit))
+                if (
+                    result == ActuationResult.CHANGED
+                    and not on
+                    and zone.next_budget_at is not None
+                    and zone.next_budget_at <= sampled
+                ):
+                    next_times.append(sampled + 0.001)
                 elif result == ActuationResult.MINIMUM_TIME:
                     next_times.append(sampled + max(1.0, adapter.minimum_remaining(on, sampled)))
         self._metrics(self._now())
@@ -733,31 +750,64 @@ class PWMLoadBalancingManager:
         cyclic = measure(self._period, active_requests, self.schedule.phases) if self.schedule is not None else None
         requested_overlap = max(0.0, sum(r.on_seconds for r in active_requests) - self._period)
         if zone is not None:
-            minimum = zone.adapter.minimum_remaining(True, now)
+            minimum = self._minimum_start_remaining(zone, now)
             safe_start += minimum
             ordinary = not zone.priority and not zone.pulse.continuous
-            if ordinary and zone.last_start_at is not None:
-                safe_start = max(safe_start, zone.last_start_at + self._period)
             if zone.observed_on:
                 delay_reason = "already_on"
             elif not zone.adapter.eligible():
                 delay_reason = "ineligible"
             elif minimum > 0:
                 delay_reason = "minimum_off"
-            elif ordinary and zone.last_start_at is not None and safe_start > now:
-                delay_reason = "start_spacing"
+            elif ordinary and zone.allocation_started:
+                delay_reason = "period_start_allowance_spent"
             elif zone.credit <= 0:
                 delay_reason = "signed_balance_or_budget_not_due"
             elif planned is not None and planned > safe_start + 0.001:
-                delay_reason = "initial_handover_window"
+                delay_reason = "hydraulic_handover_window"
             else:
                 delay_reason = "executable_budget_due"
         return {
             "group": self.name,
             "mode": self.mode,
             "reason": self.reason,
-            "budget_policy": "observed_start_period",
-            "runtime_deadline_policy": "heat_before_serialization",
+            "budget_policy": "stable_release_lattice",
+            "runtime_deadline_policy": "complete_budget_within_stable_window",
+            "budget_period_drift_seconds": (
+                abs(
+                    (zone.next_budget_at - zone.budget_anchor_at) / self._period
+                    - round((zone.next_budget_at - zone.budget_anchor_at) / self._period)
+                )
+                * self._period
+                if zone is not None
+                and zone.budget_anchor_at is not None
+                and zone.next_budget_at is not None
+                and self._period > 0
+                else None
+            ),
+            "actual_start_delay_seconds": zone.actual_start_delay if zone else None,
+            "requested_period_budget_seconds": zone.allocation if zone else None,
+            "delivered_period_budget_seconds": zone.period_delivered if zone else None,
+            "unmet_period_budget_seconds": max(0.0, zone.credit) if zone else None,
+            "observed_group_pump_starts": self.estimated_starts,
+            "runtime_window_in_seconds": (
+                dict(
+                    zip(
+                        ("earliest", "due", "latest", "budget_end"),
+                        (at - now for at in self._runtime_bounds[entity_id]),
+                    )
+                )
+                if entity_id in self._runtime_bounds
+                else None
+            ),
+            "runtime_window_constraint": (
+                "physical_minimum_or_late_demand"
+                if entity_id in self._runtime_bounds
+                and zone is not None
+                and self._runtime_bounds[entity_id][0] + max(zone.credit, zone.adapter.minimum_on_seconds())
+                > self._runtime_bounds[entity_id][3] + 0.001
+                else None
+            ),
             "scheduled_start_delay_seconds": (
                 max(0.0, planned - safe_start)
                 if planned is not None and zone is not None and not zone.observed_on and zone.credit > 0
@@ -789,8 +839,8 @@ class PWMLoadBalancingManager:
             "restart_uncertain_seconds": round(zone.uncertain_seconds, 1) if zone else 0.0,
             "last_start_epoch": zone.last_start_epoch if zone else -1,
             "ordinary_restart_in_seconds": (
-                max(0.0, zone.last_start_at + self._period - self._now())
-                if zone is not None and zone.last_start_at is not None
+                max(0.0, max(zone.next_budget_at, zone.recovery_not_before or self._now()) - self._now())
+                if zone is not None and zone.next_budget_at is not None and zone.allocation_started
                 else 0.0
             ),
             "last_ordinary_start_epoch": zone.last_ordinary_start_epoch if zone else -1,

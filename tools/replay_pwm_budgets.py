@@ -186,6 +186,10 @@ async def replay(trace, manager_class=None):
             if previous != self.on:
                 if on:
                     deadline = recurring_deadlines.pop(self.entity_id, None)
+                    bounds = getattr(sim.manager, "_runtime_bounds", {}).get(self.entity_id)
+                    if bounds is not None:
+                        # A permitted handover delay is not a missed deadline.
+                        deadline = bounds[2]
                     if ordinary and deadline is not None and sim.now > deadline + 0.01:
                         late_recurring_starts.append(
                             {
@@ -193,9 +197,12 @@ async def replay(trace, manager_class=None):
                                 "zone": self.entity_id,
                                 "eligible_at": deadline,
                                 "delay_seconds": sim.now - deadline,
+                                "runtime_bounds": bounds,
                             }
                         )
-                    self.starts.append({"at": sim.now, "ordinary": ordinary})
+                    self.starts.append(
+                        {"at": sim.now, "ordinary": ordinary, "epoch": sim.manager.period_epoch(sim.now)}
+                    )
                 pipeline = self.heater._pwm_controller._heat_pipeline
                 (pipeline.valve_opened if on else pipeline.valve_closed)(sim.now)
             return result
@@ -248,8 +255,8 @@ async def replay(trace, manager_class=None):
             if n + 1 < len(zone.transitions):
                 assert end - at >= (zone.min_on if on else zone.min_off) - 0.001
         gaps = [b["at"] - a["at"] for a, b in zip(zone.starts, zone.starts[1:])]
-        spacing = [b["at"] - a["at"] for a, b in zip(zone.starts, zone.starts[1:]) if b["ordinary"]]
-        assert all(gap >= 3600 - 0.001 for gap in spacing)
+        ordinary_epochs = [start["epoch"] for start in zone.starts if start["ordinary"]]
+        assert len(ordinary_epochs) == len(set(ordinary_epochs)), "Duplicate ordinary impulse in an actual period"
         duplicate = sum(d["seconds"] for d in duplicates if d["zone"] == zone.entity_id)
         account = entitlement_accounts[zone.entity_id]
         entitlement = account["requested"] - account["cancelled"]
@@ -277,6 +284,7 @@ async def replay(trace, manager_class=None):
     hydraulics = src.analyze(events, sim.manager.members, 0, duration, dict.fromkeys(sim.manager.members, False))
     return {
         "model": __doc__,
+        "deadline_policy": "stable_budget_window" if hasattr(sim.manager, "_runtime_bounds") else "observed_cadence",
         "zones": zones,
         "budget_events": audit,
         "duplicate_grants": duplicates,
