@@ -80,6 +80,7 @@ async def test_v12_zero_demand_journal_cannot_regrant_a_running_pulse(journal):
     # The old serializer has the same schema, but v12 erased this baseline.
     saved = journal.disk.data["pwm_coordination"]["pump"]["zones"]["climate.a"]
     saved["allocation"] = 0
+    saved.pop("zero_revision_known", None)  # v12 had no live-revision provenance.
     assert saved["pulse"][0] == saved["credit"] == 0
     await journal.reboot(offline=0)
     journal.advance(7.97)

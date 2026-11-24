@@ -72,6 +72,7 @@ async def replay(trace, manager_class=None):
     audit = []
     duplicates = []
     active_period_grants = []
+    active_revision_cancellations = []
     recurring_deadlines = {}
     late_recurring_starts = []
     entitlement_accounts = {}
@@ -127,18 +128,27 @@ async def replay(trace, manager_class=None):
         after = {k: getattr(ledger, k) for k in before}
         valid_grant = grant - duplicate
         cancellation = ledger.cancelled_balance - before["cancelled_balance"]
+        unexpected_active_cancellation = eligible and ledger.observed_on and not changed and cancellation > 0
+        if unexpected_active_cancellation:
+            # This runner cold-starts without a legacy journal. A live
+            # ordinary eligible revision is not a retired legacy baseline
+            # or a closed allocation merely because its counters balance.
+            active_revision_cancellations.append(
+                {"at": now, "zone": adapter.entity_id, "seconds": cancellation, "grant": grant}
+            )
         account["requested"] += valid_grant
         if not eligible:
             account["cancelled"] += max(0.0, account["credit"])
             account["credit"] = min(0.0, account["credit"])
-        elif abs(cancellation - grant) < 1e-7 and cancellation != 0:
+        elif not ledger.observed_on and abs(cancellation - grant) < 1e-7 and cancellation != 0:
             # Closed-period revisions affect both sides, not usable credit.
             account["cancelled"] += valid_grant
         else:
             account["credit"] += valid_grant
-            revoked = min(max(0.0, account["credit"]), max(0.0, cancellation))
-            account["credit"] -= revoked
-            account["cancelled"] += revoked
+            if not unexpected_active_cancellation:
+                revoked = min(max(0.0, account["credit"]), max(0.0, cancellation))
+                account["credit"] -= revoked
+                account["cancelled"] += revoked
         if before != after:
             audit.append(
                 {
@@ -289,6 +299,7 @@ async def replay(trace, manager_class=None):
         "budget_events": audit,
         "duplicate_grants": duplicates,
         "active_ordinary_period_grants": active_period_grants,
+        "unexpected_active_budget_cancellations": active_revision_cancellations,
         "late_recurring_budget_starts": late_recurring_starts,
         "hydraulics": hydraulics,
         "transitions": [z.transitions for z in sim.zones],

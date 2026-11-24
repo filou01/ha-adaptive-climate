@@ -85,6 +85,7 @@ class Ledger:
     pending_on: bool = False
     pending_start_epoch: int | None = None
     allocation_started: bool = False
+    zero_revision_known: bool = False
     last_start_epoch: int = -1
     last_start_at: float | None = None
     last_ordinary_start_epoch: int = -1
@@ -245,6 +246,8 @@ class PWMLoadBalancingManager:
             if zone.priority:
                 zone.budget_anchor_at = now
                 zone.next_budget_at = now + self._period
+        if not observed:
+            zone.zero_revision_known = False
         zone.observed_on, zone.sampled_at = observed, now
         self._metrics(now)
 
@@ -329,6 +332,11 @@ class PWMLoadBalancingManager:
             return
         if self._origin is None:
             return
+        if zone.epoch < 0 and zone.next_budget_at is not None and zone.observed_on and not adapter.continuous_demand():
+            # A restored expired reservation has no allocation, but can still
+            # have an ON tail. Let it end under the normal minimum-ON guard
+            # before issuing another ordinary budget on the existing lattice.
+            return
         output = adapter.output()
         signature = adapter.signature()
         changed = signature != zone.target_signature or zone.pending_priority
@@ -399,6 +407,7 @@ class PWMLoadBalancingManager:
                     zone.allocation_started
                     and zone.allocation == 0
                     and zone.pulse.seconds == 0
+                    and not zone.zero_revision_known
                     and not changed
                     and not pulse.continuous
                 )
@@ -431,6 +440,18 @@ class PWMLoadBalancingManager:
                     zone.credit += zone.allocation
                     zone.requested += zone.allocation
                     zone.allocation_started = False
+            # A live eligible revision can legitimately prepare Pulse(0), e.g.
+            # positive subminimum PID demand during minimum ON. Remember its
+            # provenance: a later return revises the SAME reservation. Legacy
+            # journals with an erased baseline still lack this proof and keep
+            # the conservative anti-duplicate rule above.
+            zone.zero_revision_known = (
+                not new_epoch
+                and zone.observed_on
+                and zone.allocation_started
+                and pulse.seconds == 0
+                and (zone.allocation > 0 or zone.zero_revision_known)
+            )
             zone.requested += pulse.seconds if new_epoch else pulse.seconds - zone.allocation
             zone.allocation = pulse.seconds
             zone.pulse = pulse

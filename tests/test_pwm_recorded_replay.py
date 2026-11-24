@@ -34,6 +34,7 @@ async def test_recorded_electrical_budget_provenance(monkeypatch):
     (output / "electrical-budget-audit.json").write_text(json.dumps(result), encoding="utf-8")
     assert not result["duplicate_grants"], "A balanced ledger must not hide resurrected spent allocations"
     assert not result["active_ordinary_period_grants"], "A global boundary must not extend an ordinary running pulse"
+    assert not result["unexpected_active_budget_cancellations"], "A live eligible revision is not a closed cancellation"
     assert not result["late_recurring_budget_starts"], "Execution must remain within the stable budget window"
 
 

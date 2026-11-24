@@ -1,6 +1,6 @@
 """Compare real synthetic runtime edges from exact git manager revisions.
 
-The runtime planner and optimizer did not change between pwm.14 and pwm.15.
+The compared revisions share the same runtime planner and optimizer.
 No Home Assistant data, credentials or journal reconstruction are involved.
 """
 
@@ -78,6 +78,7 @@ async def main():
         for name, ref in (
             ("v14", "551adf2f877663fdeb18585283a19d8c44507f6d"),
             ("v15", "46d3b488adb36efea9045ac93b26f368e9e368fa"),
+            ("v16", "c7bcbd9a7e1902d1d2f06159013e3ebd5c8a514d"),
         )
     }
     versions["candidate"] = current

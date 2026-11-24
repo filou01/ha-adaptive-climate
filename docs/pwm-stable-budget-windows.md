@@ -1,6 +1,6 @@
-# Stable budget windows (pwm.16 candidate)
+# Stable budget windows (PWM previews 16 and 17)
 
-This candidate separates the entitlement clock from hydraulic execution.
+Preview 16 separates the entitlement clock from hydraulic execution.
 The PWM duration comes from the registered adapters; 3600 seconds is not a
 production constant. Acceptance cases also exercise 1800 and 7200 seconds.
 
@@ -50,6 +50,22 @@ is reported as unknown until a new allocation. Missed offline releases advance
 on the old lattice. Uncertain or legacy start timestamps retain a conservative
 guard independently of the budget clock. Invalid new fields fail closed.
 
+PWM preview 17 records `zero_revision_known` only when a positive, eligible
+demand prepares zero pulse seconds during an already-started allocation. A
+return to a larger pulse while the relay is still ON revises that allocation
+once. The revised credit still accounts for observed ON time and inherited
+signed debt. The field is optional in the version-1 journal. A missing field
+retains conservative handling for older erased baselines, including v12.
+
+Recovery retains this proof for an unexpired reservation when the saved and
+current output are both ON and there is no unresolved command. Time spent
+offline counts as uncertain consumption, bounded by one configured period,
+and is booked as cancellation. Only observed ON time counts as delivery.
+An OFF edge, mismatched state or expired reservation clears the proof. If an
+expired output is still ON, ordinary demand waits for its minimum ON and OFF
+guards before starting the current budget. Continuous demand retains its direct
+response and missed releases are skipped on the existing lattice.
+
 `budget_period_drift_seconds` measures deviation from the established release
 lattice, not missing-period count. Use observed delivery and quota tests with
 it. `requested_period_budget_seconds` is the nominal revised allocation;
@@ -84,6 +100,12 @@ Safety tests are retained. The electrical replay auditor checks ordinary start
 quotas and runtime budget deadlines instead of assuming all phase changes must
 keep at least one full PWM period between actual starts.
 
+`tests/test_pwm_subminimum_return.py` checks a positive demand dip with real
+switch and input-boolean adapters. It verifies the revised entitlement, the
+next period's usable heat, and recovery with elapsed offline time, pending
+commands and expired windows. The replay auditor also checks that eligible
+ordinary revisions while ON do not cancel the returned entitlement.
+
 Reproduce synthetic version comparisons from the repository root:
 
 ```powershell
@@ -93,7 +115,7 @@ $env:PWM_BENCHMARK_OUTPUT='/path/to/local/benchmarks'
 python -m pytest tests/test_pwm_persistence_benchmark.py -q
 ```
 
-The comparison loads exact pwm.14 and pwm.15 manager revisions from git and
+The comparison loads exact pwm.14, pwm.15 and pwm.16 manager revisions from git and
 uses their unchanged common runtime planner/optimizer. It reports complete
 observed intervals and integrated union/overlap, not just cyclic preferences.
 Private HA recorder inputs are never included in the repository.

@@ -126,6 +126,8 @@ def snapshot(group: PWMLoadBalancingManager, now: float, wall: float) -> dict[st
             "suppressed_ordinary_starts": zone.suppressed_ordinary_starts,
             "uncertain": zone.uncertain_seconds,
         }
+        if zone.zero_revision_known:
+            rows[entity]["zero_revision_known"] = True
     return {
         "version": 1,
         "at": wall,
@@ -183,6 +185,18 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
         for key in ("priority", "pending_priority", "allocation_started"):
             if not isinstance(row.get(key, False), bool):
                 raise ValueError("Invalid PWM priority flag")
+        if not isinstance(row.get("zero_revision_known", False), bool):
+            raise ValueError("Invalid PWM zero-revision provenance")
+        if row.get("zero_revision_known", False) and (
+            row["allocation"] != 0
+            or pulse[0] != 0
+            or pulse[1] != 0
+            or pulse[2]
+            or not row.get("allocation_started", False)
+            or row["epoch"] < 0
+            or row["next_at"] is None
+        ):
+            raise ValueError("Inconsistent PWM zero-revision provenance")
         for key in ("priority_at", "owed_at", "last_start_at"):
             if row.get(key) is not None and number(row[key]) > min(wall, number(row.get("at", saved_at))) + 5:
                 raise ValueError("Invalid PWM priority timestamp")
@@ -296,14 +310,30 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
         # Legacy journals have no per-reservation observed delivery. Unknown is
         # distinct from zero until the first new entitlement is issued.
         zone.period_delivered = row.get("period_delivered")
-        uncertain = min(max(0.0, zone.credit), offline) if row["controller"]["on"] else 0.0
-        if row["pending_on"] or row["controller"]["on"] != zone.adapter.active():
+        expired = next_at is not None and next_at <= wall
+        saved_on = row["controller"]["on"]
+        observed_on = zone.adapter.active()
+        zone.zero_revision_known = (
+            row.get("zero_revision_known", False)
+            and not expired
+            and saved_on
+            and observed_on
+            and not row["pending_on"]
+            and not zone.adapter.restart_force_off
+        )
+        if row["pending_on"] or saved_on != observed_on:
             uncertain = max(0.0, zone.credit)
+        elif zone.zero_revision_known:
+            # There may be no positive credit until demand returns. Reserve
+            # the possible offline ON time before that later revision can use it.
+            uncertain = min(offline, group._period)
+        else:
+            uncertain = min(max(0.0, zone.credit), offline) if saved_on else 0.0
         # Unobserved time is neither verified delivery nor a new catch-up pulse.
         zone.credit -= uncertain
         zone.cancelled_balance += uncertain
         zone.uncertain_seconds += uncertain
-        if next_at is not None and next_at <= wall:
+        if expired:
             zone.cancelled_balance += max(0.0, zone.credit)
             zone.credit = min(0.0, zone.credit)
             zone.epoch, zone.allocation, zone.pulse = -1, 0.0, Pulse(0.0)
@@ -311,7 +341,7 @@ def restore(group: PWMLoadBalancingManager, data: dict[str, Any], now: float, wa
             # live allocation skips offline periods without moving the anchor.
         group.restored_members.add(entity)
         zone.restart_pending = True
-        zone.sampled_at, zone.observed_on = now, zone.adapter.active()
+        zone.sampled_at, zone.observed_on = now, observed_on
     group.mode, group.reason = "active", "restart_restored"
     group._observed_group = {entity for entity, zone in group._zones.items() if zone.adapter.active()}
     group._pump_sample = now
