@@ -39,8 +39,11 @@ bestimmen diese Grenze. Runtime-Reparaturen müssen nötigenfalls mehr Räume
 überlappen lassen. Sie dürfen die freigegebene Folgeanforderung nicht für
 Pumpen-/Gewichtspräferenzen verschieben.
 
-Die erste Einordnung eines Raums ohne beobachtete Startreferenz behält das
-bisherige begrenzte Übergabefenster. Damit bleiben nützliche erste Übergaben,
+Die erste Einordnung eines Raums ohne beobachtete Startreferenz behält bei
+Unterlast das bisherige begrenzte Übergabefenster. Bei Überlast bildet dagegen
+die zyklische Phase die späteste erste Platzierung: Die Runtime darf die vom
+zyklischen Plan bereits notwendige Überlappung nicht wieder herausserialisieren.
+Damit bleiben nützliche erste Übergaben bei Unterlast,
 bekannte physikalische Mindest-AUS-Verschiebungen und zurückgezogene ungestartete
 Anforderungen geschützt. Bei stabilen Folgebudgets bleiben dann die erarbeiteten
 Phasen erhalten. Eine laufende Anforderung darf über eine Gruppengrenze reichen;
@@ -104,8 +107,9 @@ next budget anchor. Ledger and minimum-spacing checks did not detect lateness.
 
 Once a room has an observed cadence and a positive executable ordinary budget,
 the safe spacing/minimum-OFF bound is now also its hydraulic latest start.
-Additional concurrency wins over postponing requested heat. Initial rooms keep
-their bounded handover window, preserving existing useful first-placement and
+Additional concurrency wins over postponing requested heat. Initial overloaded
+placements also retain the cyclic phase deadline and its required overlap.
+Initial rooms under capacity keep their bounded handover window, preserving useful first-placement and
 withdrawal behavior. Continuous demand, low duty and real physical limits keep
 their exceptions. No ordinary period is appended to a running pulse.
 

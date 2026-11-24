@@ -21,6 +21,7 @@ async def test_stable_overload_preserves_each_observed_cadence_and_full_budgets(
     for zone, duration in zip(sim.zones, durations):
         starts = [at for at, on in zone.transitions if on]
         assert len(starts) >= 10
+        assert starts[0] <= sim.manager.schedule.phases[zone.entity_id] + 0.001
         assert all(b - a == pytest.approx(period, abs=0.001) for a, b in pairwise(starts))
         assert max(at - starts[0] - n * period for n, at in enumerate(starts)) <= 0.001
         ledger = sim.manager._zones[zone.entity_id]

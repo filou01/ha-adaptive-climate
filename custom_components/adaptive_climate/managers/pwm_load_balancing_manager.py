@@ -466,6 +466,10 @@ class PWMLoadBalancingManager:
         reasons: dict[str, str] = {}
         boundary = cycle_start + self._period
         horizon = boundary + self._period
+        overloaded = (
+            sum(min(self._period, max(0.0, z.allocation)) for z in self._zones.values() if z.adapter.eligible())
+            > self._period
+        )
         for entity, zone in self._zones.items():
             adapter = zone.adapter
             eligible = adapter.eligible()
@@ -499,6 +503,11 @@ class PWMLoadBalancingManager:
                     budget_end = min(boundary, zone.next_budget_at) if zone.next_budget_at is not None else boundary
                     latest = max(earliest, min(deadline, budget_end - 0.001)) if ordinary else earliest
                     due = min(due, latest)
+                    if ordinary and overloaded:
+                        # Preserve the cyclic planner's necessary extra overlap
+                        # at initial overload too; do not stretch its first
+                        # chain back out beyond the nominal phase deadlines.
+                        latest = due
                 duration = max(zone.credit, adapter.minimum_on_seconds())
                 if zone.pulse.continuous:
                     duration = max(duration, horizon - due)
